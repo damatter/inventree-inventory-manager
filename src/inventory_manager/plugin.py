@@ -28,7 +28,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.6"
+    VERSION = "0.2.7"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
@@ -198,7 +198,7 @@ class InventoryManagerPlugin(
                 "title": "Reporting",
                 "description": "Open stock reports and replenishment settings",
                 "icon": "ti:report-analytics",
-                "source": f"{self.control_panel_url}reporting.js:openReporting",
+                "source": f"{self.control_panel_url}reporting.js:openReporting?v={self.VERSION}",
             }
         ]
 
@@ -212,7 +212,7 @@ class InventoryManagerPlugin(
                 "title": "Reporting",
                 "description": "Stock reports and replenishment settings",
                 "source": (
-                    f"{self.control_panel_url}reporting.js:renderReportingShortcut"
+                    f"{self.control_panel_url}reporting.js:renderReportingShortcut?v={self.VERSION}"
                 ),
                 "options": {"width": 3, "height": 2},
             }
