@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ plugin_title }}</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #263746;
+            background: #f3f5f7;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        .shell { max-width: 920px; margin: 0 auto; padding: 28px 18px 48px; }
+        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
+        h1 { margin: 0; font-size: 30px; }
+        .subtitle { margin: 5px 0 0; color: #687681; }
+        .back { color: #344b5e; font-weight: 650; text-decoration: none; }
+        .card { margin-bottom: 18px; padding: 24px; border: 1px solid #d7dde2; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgb(35 52 66 / 6%); }
+        .card h2 { margin: 0 0 8px; font-size: 21px; }
+        .card p { margin: 0 0 18px; color: #687681; line-height: 1.5; }
+        .primary { width: 100%; min-height: 58px; padding: 14px 22px; border: 0; border-radius: 8px; background: #26734d; color: white; font-size: 18px; font-weight: 750; cursor: pointer; }
+        .primary:hover { background: #1f6140; }
+        .secondary { padding: 11px 20px; border: 0; border-radius: 7px; background: #344b5e; color: white; font-weight: 700; cursor: pointer; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        label { display: block; margin-bottom: 7px; font-weight: 700; }
+        input[type="number"] { width: 100%; padding: 11px 12px; border: 1px solid #b8c2ca; border-radius: 6px; font: inherit; }
+        .help { display: block; margin-top: 6px; color: #6d7982; font-size: 13px; line-height: 1.4; }
+        .toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 8px; }
+        .toggle input { width: 20px; height: 20px; }
+        .messages { margin-bottom: 18px; }
+        .message { margin-bottom: 8px; padding: 12px 14px; border-radius: 7px; background: #e6f4eb; color: #205c39; }
+        .message.error { background: #f9e2e2; color: #8a2424; }
+        .progress { display: none; margin-top: 14px; padding: 12px; border-radius: 7px; background: #edf4f8; text-align: center; }
+        .reports { margin: 0; padding-left: 20px; }
+        .reports li { margin: 8px 0; }
+        .reports a { color: #225f91; font-weight: 650; }
+        .locked { padding: 14px; border-radius: 7px; background: #f6f1df; color: #655419; }
+        .footer { margin-top: 18px; color: #7a858d; font-size: 12px; text-align: center; }
+        @media (max-width: 680px) {
+            .topbar { align-items: flex-start; flex-direction: column-reverse; }
+            .grid { grid-template-columns: 1fr; }
+            .card { padding: 19px; }
+        }
+    </style>
+</head>
+<body>
+<main class="shell">
+    <header class="topbar">
+        <div>
+            <h1>{{ plugin_title }}</h1>
+            <div class="subtitle">Replenishment reports made simple</div>
+        </div>
+        <a class="back" href="/web/">Back to InvenTree</a>
+    </header>
+
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="message{% if message.tags %} {{ message.tags }}{% endif %}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <section class="card">
+        <h2>Generate a report now</h2>
+        <p>Creates the current replenishment PDF using the settings below.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="generate-report">
+            <button class="primary" type="submit">Generate Replenishment Report</button>
+        </form>
+        <div class="progress" id="report-progress">Generating your reportâ€¦</div>
+    </section>
+
+    <section class="card">
+        <h2>Report settings</h2>
+        <p>These rules apply to both manual and automatic reports.</p>
+        {% if is_staff %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save-settings">
+            <div class="grid">
+                <div>
+                    <label for="default-minimum">Default minimum stock</label>
+                    <input id="default-minimum" name="default_minimum_stock" type="number" min="1" step="1" value="{{ default_minimum_stock }}" required>
+                    <span class="help">Used only when a part has no minimum configured in InvenTree.</span>
+                </div>
+                <div>
+                    <label for="buffer-multiplier">Low-buffer multiplier</label>
+                    <input id="buffer-multiplier" name="low_buffer_multiplier" type="number" min="1" step="0.1" value="{{ low_buffer_multiplier }}" required>
+                    <span class="help">Example: 2 means stock below twice the minimum is low buffer.</span>
+                </div>
+                <div>
+                    <label for="report-interval">Automatic report interval</label>
+                    <input id="report-interval" name="automation_interval_days" type="number" min="1" max="365" step="1" value="{{ automation_interval_days }}" required>
+                    <span class="help">Use 7 for a weekly report.</span>
+                </div>
+                <div>
+                    <label>Automation</label>
+                    <label class="toggle" for="automation-enabled">
+                        <input id="automation-enabled" name="automation_enabled" type="checkbox"{% if automation_enabled %} checked{% endif %}>
+                        Generate reports automatically
+                    </label>
+                    <span class="help">The first run is scheduled when these settings are saved.</span>
+                </div>
+            </div>
+            <div style="margin-top: 20px;">
+                <button class="secondary" type="submit">Save Settings</button>
+            </div>
+        </form>
+        {% else %}
+        <div class="locked">An InvenTree administrator can change these shared settings. The report button above is available to everyone.</div>
+        {% endif %}
+    </section>
+
+    {% if latest_outputs %}
+    <section class="card">
+        <h2>Recent reports</h2>
+        <ul class="reports">
+            {% for output in latest_outputs %}
+            <li>
+                {{ output.created }} â€”
+                {% if output.url %}
+                <a href="{{ output.url }}" target="_blank" rel="noopener">Open PDF</a>
+                {% elif output.complete %}
+                Completed
+                {% else %}
+                Generatingâ€¦
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    <div class="footer">INTERNAL - DiCor Engineering Â· Inventory Manager {{ plugin_version }}</div>
+</main>
+
+{% if queued_output_id %}
+<script>
+    const progress = document.getElementById('report-progress');
+    progress.style.display = 'block';
+
+    async function monitorReport() {
+        try {
+            const response = await fetch('{{ queued_output_api|escapejs }}', {
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await response.json();
+
+            if (data.errors) {
+                progress.textContent = data.errors.error || 'The report could not be generated.';
+                return;
+            }
+            if (data.complete && data.output) {
+                progress.textContent = 'Report ready. Opening PDFâ€¦';
+                window.location.assign(new URL(data.output, window.location.origin));
+                return;
+            }
+        } catch (error) {
+            progress.textContent = 'Still working. Check Recent reports in a moment.';
+            return;
+        }
+        window.setTimeout(monitorReport, 700);
+    }
+
+    monitorReport();
+</script>
+{% endif %}
+</body>
+</html>

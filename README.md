@@ -1,18 +1,15 @@
 # InvenTree Inventory Manager
 
 Inventory Manager adds calculated stock-level data to an InvenTree report
-template. The first milestone provides an inventory replenishment report with:
+template. It provides:
 
 - one combined row per active, non-virtual part;
-- an assumed minimum of `2` when `minimum_stock` is not configured;
+- a configurable assumed minimum when `minimum_stock` is not configured;
 - `critical`, `reorder`, `low_buffer`, and `healthy` classifications;
 - healthy parts omitted from the actionable report;
-- a suggested replenishment quantity which restores stock to twice the
-  effective minimum; and
-- accurate summary counts calculated in Python.
-
-Email delivery and weekly scheduling are intentionally deferred until the
-report calculations have been tested against a real InvenTree installation.
+- a configurable replenishment target;
+- a simple screen for settings and one-click PDF generation; and
+- optional repeating report generation through InvenTree's background worker.
 
 ## Stock rules
 
@@ -20,8 +17,8 @@ report calculations have been tested against a real InvenTree installation.
 | --- | --- |
 | Critical | Available quantity is zero or less |
 | Reorder | Available quantity is greater than zero but below minimum |
-| Low buffer | Available quantity is at least minimum but below 2 x minimum |
-| Healthy | Available quantity is at least 2 x minimum |
+| Low buffer | Available quantity is at least minimum but below the configured multiplier |
+| Healthy | Available quantity is at or above the configured multiplier |
 
 `Available` currently means the sum of all InvenTree stock items which match
 InvenTree's built-in `IN_STOCK_FILTER`, grouped by their exact part. Stock held
@@ -55,10 +52,21 @@ The package exposes `InventoryManagerPlugin` through the required
    `[inventory-manager:replenishment]` in its description.
 5. Upload
    `src/inventory_manager/templates/inventory_manager/replenishment_report.html`.
-6. Leave **Merge** disabled and print the template against one part. The
-   selected part only acts as the report anchor; the plugin evaluates every
-   active, non-virtual part.
+6. Leave **Merge** disabled. The selected part only acts as the report anchor;
+   the plugin evaluates every active, non-virtual part.
 
 The plugin only performs the inventory query for a report carrying the name or
 description marker above, so ordinary InvenTree reports are unaffected.
+
+## Inventory Manager screen
+
+Enable InvenTree's **Plugin URL Integration**, **Plugin UI Integration**, and
+**Plugin Schedule Integration**, then reload the plugins. An **Inventory
+Manager** item will appear in the main navigation. The same page is available
+directly at `/plugin/inventory-manager/`.
+
+The large report button is available to authenticated users. Administrators
+can also change the default minimum, low-buffer multiplier, automation toggle,
+and automatic report interval. Automatic reports are retained in the Recent
+Reports list on the same screen. Email delivery is the next automation step.
 

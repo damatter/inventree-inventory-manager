@@ -194,7 +194,7 @@ content: "INTERNAL - DiCor Engineering";
                 <td class="summary-value">{{ reorder_count }}</td>
             </tr>
             <tr>
-                <td><span class="status-label status-buffer">LOW BUFFER</span>Below twice the minimum</td>
+                <td><span class="status-label status-buffer">LOW BUFFER</span>Below {% decimal inventory_policy.target_multiplier %} times the minimum</td>
                 <td class="summary-value">{{ low_buffer_count }}</td>
             </tr>
             <tr class="summary-total">
@@ -249,7 +249,8 @@ content: "INTERNAL - DiCor Engineering";
     </table>
     <div class="table-note">
         Red rows are out of stock. Orange rows are below minimum. Yellow rows are below
-        twice the minimum. An asterisk marks the assumed minimum stock level.
+        {% decimal inventory_policy.target_multiplier %} times the minimum. An asterisk marks
+        the assumed minimum stock level.
     </div>
     {% else %}
     <div class="empty-report">No parts currently require replenishment review.</div>
@@ -258,4 +259,3 @@ content: "INTERNAL - DiCor Engineering";
 {% endblock page_content %}
 
 {% block post_page_content %}{% endblock post_page_content %}
-
