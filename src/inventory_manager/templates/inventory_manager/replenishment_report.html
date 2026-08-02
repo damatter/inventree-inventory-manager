@@ -5,9 +5,10 @@
 {% load inventree_extras %}
 
 {% block style %}
-.report-width {
-    width: 92%;
-    margin: 0 auto;
+.inventory-report-content {
+    width: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 .report-title {
@@ -97,6 +98,7 @@
 
 .stock-table {
     width: 100%;
+    margin: 0;
     border-collapse: collapse;
     table-layout: fixed;
 }
@@ -164,14 +166,14 @@ content: "{% format_date date %}";
 {% endblock bottom_left %}
 
 {% block bottom_center %}
-content: "{% inventree_version shortstring=True %}";
+content: "INTERNAL - DiCor Engineering";
 {% endblock bottom_center %}
 {% endblock style %}
 
 {% block pre_page_content %}{% endblock pre_page_content %}
 
 {% block page_content %}
-<div class="report-width">
+<div class="inventory-report-content">
     <h1 class="report-title">Inventory Replenishment Report</h1>
     <p class="report-date">Generated {% format_date date %}</p>
 
@@ -210,7 +212,7 @@ content: "{% inventree_version shortstring=True %}";
 
 <div class="page-break"></div>
 
-<div class="report-width">
+<div class="inventory-report-content">
     <h2 class="detail-title">Parts Requiring Replenishment Review</h2>
 
     {% if replenishment_items %}

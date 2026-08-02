@@ -5,11 +5,29 @@ import unittest
 from inventory_manager.inventory import PartStock
 from inventory_manager.reports import (
     build_report_context,
+    compact_stock_location,
     is_replenishment_report_template,
 )
 
 
 class ReportAdapterTests(unittest.TestCase):
+    def test_stock_location_is_compacted_to_root_and_leaf(self) -> None:
+        location = SimpleNamespace(
+            name="A09-c",
+            pathstring="DCWarehouse/A/09/A09-c",
+            description="Stock Location A09-c",
+        )
+
+        self.assertEqual(compact_stock_location(location), "DCWarehouse/A09-c")
+
+    def test_top_level_stock_location_is_not_repeated(self) -> None:
+        location = SimpleNamespace(name="DCWarehouse", pathstring="DCWarehouse")
+
+        self.assertEqual(compact_stock_location(location), "DCWarehouse")
+
+    def test_missing_stock_location_is_blank(self) -> None:
+        self.assertEqual(compact_stock_location(None), "")
+
     def test_exact_report_name_opts_in(self) -> None:
         report = SimpleNamespace(
             name="  Inventory Replenishment Report ", description=""
