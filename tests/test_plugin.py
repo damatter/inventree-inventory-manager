@@ -34,6 +34,7 @@ class PluginTests(unittest.TestCase):
 
         self.assertTrue(issubclass(plugin_class, FakeReportMixin))
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
+        self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
         self.assertEqual(plugin_class.VERSION, "0.1.0")
 

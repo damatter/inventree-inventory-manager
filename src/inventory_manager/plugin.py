@@ -14,6 +14,7 @@ class InventoryManagerPlugin(ReportMixin, InvenTreePlugin):
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
     VERSION = "0.1.0"
+    AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
 
