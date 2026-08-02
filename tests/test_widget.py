@@ -20,6 +20,7 @@ class ReportingWidgetTests(unittest.TestCase):
             script,
         )
         self.assertNotIn("target.replaceChildren", script)
+        self.assertIn('link.textContent = "Open Reporting"', script)
 
 
 if __name__ == "__main__":

@@ -62,7 +62,7 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
-        self.assertEqual(plugin_class.VERSION, "0.2.5")
+        self.assertEqual(plugin_class.VERSION, "0.2.6")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -140,6 +140,7 @@ class PluginTests(unittest.TestCase):
             "/plugin/inventory-manager/reporting.js:openReporting",
         )
         self.assertEqual(dashboard["title"], "Reporting")
+        self.assertEqual(dashboard["options"], {"width": 3, "height": 2})
         self.assertEqual(
             dashboard["source"],
             "/plugin/inventory-manager/reporting.js:renderReportingShortcut",

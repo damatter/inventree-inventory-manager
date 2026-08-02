@@ -28,7 +28,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.5"
+    VERSION = "0.2.6"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
@@ -214,7 +214,7 @@ class InventoryManagerPlugin(
                 "source": (
                     f"{self.control_panel_url}reporting.js:renderReportingShortcut"
                 ),
-                "options": {"width": 2, "height": 1},
+                "options": {"width": 3, "height": 2},
             }
         ]
 
