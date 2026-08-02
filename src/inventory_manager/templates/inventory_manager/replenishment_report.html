@@ -1,0 +1,254 @@
+{% extends "report/inventree_report_base.html" %}
+
+{% load i18n %}
+{% load report %}
+{% load inventree_extras %}
+
+{% block style %}
+.report-width {
+    width: 92%;
+    margin: 0 auto;
+}
+
+.report-title {
+    margin: 0 0 6px 0;
+    color: #263746;
+    font-size: 30px;
+    font-weight: bold;
+}
+
+.report-date {
+    margin: 0 0 22px 0;
+    color: #5f6b73;
+    font-size: 14px;
+}
+
+.summary-box {
+    border: 2px solid #b9c2c9;
+    border-radius: 5px;
+    background-color: #f7f9fa;
+    padding: 18px;
+}
+
+.summary-heading {
+    margin: 0 0 12px 0;
+    color: #263746;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.summary-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.summary-table td {
+    padding: 10px 9px;
+    border-bottom: 1px solid #d8dee3;
+    font-size: 15px;
+    vertical-align: middle;
+}
+
+.summary-value {
+    width: 20%;
+    text-align: right;
+    font-size: 20px !important;
+    font-weight: bold;
+}
+
+.summary-total td {
+    border-top: 2px solid #aeb8c0;
+    background-color: #e7edf1;
+    color: #263746;
+    font-weight: bold;
+}
+
+.status-label {
+    display: inline-block;
+    min-width: 105px;
+    margin-right: 10px;
+    padding: 5px 8px;
+    border-radius: 3px;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+}
+
+.status-critical { background-color: #a92929; }
+.status-reorder { background-color: #c95e0c; }
+.status-buffer { background-color: #c79b00; color: #1d1d1d; }
+
+.policy-note {
+    margin-top: 16px;
+    color: #4f5b63;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.page-break { page-break-after: always; }
+
+.detail-title {
+    margin: 0 0 12px 0;
+    color: #263746;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.stock-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.stock-table thead { display: table-header-group; }
+.stock-table tr { page-break-inside: avoid; }
+
+.stock-table th {
+    padding: 9px 7px;
+    border: 1px solid #263746;
+    background-color: #344b5e;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: bold;
+    text-align: left;
+}
+
+.stock-table td {
+    padding: 8px 7px;
+    border: 1px solid #cbd2d8;
+    font-size: 12px;
+    line-height: 1.3;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+}
+
+.part-column { width: 20%; font-weight: bold; }
+.description-column { width: 31%; }
+.location-column { width: 17%; }
+.number-column { width: 10%; text-align: center; font-weight: bold; }
+.order-column { width: 12%; text-align: center; font-weight: bold; }
+
+.row-critical td { background-color: #f6d7d7; border-color: #dda9a9; }
+.row-critical .number-column,
+.row-critical .order-column { color: #922020; }
+.row-reorder td { background-color: #f9e2cf; border-color: #e4bea0; }
+.row-reorder .number-column,
+.row-reorder .order-column { color: #8e470e; }
+.row-low_buffer td { background-color: #fff2bd; border-color: #e2d18c; }
+
+.assumed-minimum { font-weight: bold; }
+
+.table-note {
+    margin-top: 10px;
+    color: #59656d;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.empty-report {
+    padding: 24px;
+    border: 2px solid #79a981;
+    background-color: #edf7ef;
+    color: #235d2d;
+    font-size: 16px;
+    text-align: center;
+}
+
+{% block top_center %}
+content: "{% trans 'Inventory Replenishment Report' %}";
+{% endblock top_center %}
+
+{% block bottom_left %}
+content: "{% format_date date %}";
+{% endblock bottom_left %}
+
+{% block bottom_center %}
+content: "{% inventree_version shortstring=True %}";
+{% endblock bottom_center %}
+{% endblock style %}
+
+{% block pre_page_content %}{% endblock pre_page_content %}
+
+{% block page_content %}
+<div class="report-width">
+    <h1 class="report-title">Inventory Replenishment Report</h1>
+    <p class="report-date">Generated {% format_date date %}</p>
+
+    <div class="summary-box">
+        <div class="summary-heading">Inventory Status Summary</div>
+        <table class="summary-table">
+            <tr>
+                <td><span class="status-label status-critical">CRITICAL</span>Out of stock</td>
+                <td class="summary-value">{{ critical_count }}</td>
+            </tr>
+            <tr>
+                <td><span class="status-label status-reorder">REORDER</span>Below minimum stock</td>
+                <td class="summary-value">{{ reorder_count }}</td>
+            </tr>
+            <tr>
+                <td><span class="status-label status-buffer">LOW BUFFER</span>Below twice the minimum</td>
+                <td class="summary-value">{{ low_buffer_count }}</td>
+            </tr>
+            <tr class="summary-total">
+                <td>Parts requiring review</td>
+                <td class="summary-value">{{ review_count }}</td>
+            </tr>
+            <tr>
+                <td>Active physical parts evaluated</td>
+                <td class="summary-value">{{ parts_evaluated }}</td>
+            </tr>
+        </table>
+        <div class="policy-note">
+            Parts without a configured minimum stock level use an assumed minimum of
+            <strong>{% decimal inventory_policy.assumed_minimum %} units</strong>, shown with an
+            asterisk. Suggested orders restore stock to
+            <strong>{% decimal inventory_policy.target_multiplier %} times the minimum</strong>.
+        </div>
+    </div>
+</div>
+
+<div class="page-break"></div>
+
+<div class="report-width">
+    <h2 class="detail-title">Parts Requiring Replenishment Review</h2>
+
+    {% if replenishment_items %}
+    <table class="stock-table">
+        <thead>
+            <tr>
+                <th class="part-column">Part</th>
+                <th class="description-column">Description</th>
+                <th class="location-column">Location</th>
+                <th class="number-column">Available</th>
+                <th class="number-column">Minimum</th>
+                <th class="order-column">Suggested Order</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in replenishment_items %}
+            <tr class="row-{{ row.status }}">
+                <td class="part-column">{{ row.part_name }}</td>
+                <td class="description-column">{{ row.description|default:"-" }}</td>
+                <td class="location-column">{{ row.location_display|default:"-" }}</td>
+                <td class="number-column">{% decimal row.available %}</td>
+                <td class="number-column">
+                    {% decimal row.minimum %}{% if row.minimum_assumed %}<span class="assumed-minimum">*</span>{% endif %}
+                </td>
+                <td class="order-column">{% decimal row.suggested_order %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="table-note">
+        Red rows are out of stock. Orange rows are below minimum. Yellow rows are below
+        twice the minimum. An asterisk marks the assumed minimum stock level.
+    </div>
+    {% else %}
+    <div class="empty-report">No parts currently require replenishment review.</div>
+    {% endif %}
+</div>
+{% endblock page_content %}
+
+{% block post_page_content %}{% endblock post_page_content %}
+

@@ -1,0 +1,3 @@
+recursive-include src/inventory_manager/templates *.html
+include src/inventory_manager/py.typed
+
