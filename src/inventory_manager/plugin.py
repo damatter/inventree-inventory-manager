@@ -9,7 +9,10 @@ from plugin.mixins import (
     UserInterfaceMixin,
 )
 
-from .automation import generate_replenishment_report
+from .emailing import (
+    DEFAULT_EMAIL_SUBJECT,
+    generate_and_email_replenishment_report,
+)
 from .inventory import InventoryPolicy
 from .reports import build_report_context, is_replenishment_report_template
 
@@ -28,7 +31,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.7"
+    VERSION = "0.3.0"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
@@ -50,9 +53,21 @@ class InventoryManagerPlugin(
             "default": 2.0,
             "validator": float,
         },
+        "EMAIL_RECIPIENT": {
+            "name": "Report recipient",
+            "description": "Email address that receives automatic reports",
+            "default": "",
+            "validator": str,
+        },
+        "EMAIL_SUBJECT": {
+            "name": "Email subject",
+            "description": "Subject line used for replenishment report emails",
+            "default": DEFAULT_EMAIL_SUBJECT,
+            "validator": str,
+        },
         "AUTOMATION_ENABLED": {
             "name": "Automatic reports",
-            "description": "Generate a replenishment report on a repeating schedule",
+            "description": "Generate and email a report on a repeating schedule",
             "default": False,
             "validator": bool,
         },
@@ -106,10 +121,23 @@ class InventoryManagerPlugin(
             value = 7
         return min(max(value, 1), 365)
 
+    def email_recipient(self) -> str:
+        """Return the configured automatic report recipient."""
+
+        return str(self._setting("EMAIL_RECIPIENT", "") or "").strip()
+
+    def email_subject(self) -> str:
+        """Return the configured report email subject."""
+
+        value = str(
+            self._setting("EMAIL_SUBJECT", DEFAULT_EMAIL_SUBJECT) or ""
+        ).strip()
+        return value or DEFAULT_EMAIL_SUBJECT
+
     def get_scheduled_tasks(self) -> dict[str, dict[str, object]]:
         """Dynamically register one repeating report task when enabled."""
 
-        if not self.automation_enabled():
+        if not self.automation_enabled() or not self.email_recipient():
             return {}
 
         return {
@@ -126,19 +154,36 @@ class InventoryManagerPlugin(
 
         task_name = self.get_task_name("replenishment_report")
 
-        if self.automation_enabled():
+        if self.automation_enabled() and self.email_recipient():
+            from datetime import timedelta
+
+            from django.utils import timezone
+            from django_q.models import Schedule
+
             self.register_tasks()
+            Schedule.objects.filter(name=task_name).update(
+                next_run=timezone.now()
+                + timedelta(days=self.automation_interval_days())
+            )
             return
 
         from django_q.models import Schedule
 
         Schedule.objects.filter(name=task_name).delete()
 
-    def run_scheduled_report(self) -> None:
-        """Queue the configured automatic replenishment report."""
+    def send_configured_report_email(self):
+        """Generate and email a report using the saved delivery settings."""
 
-        if self.automation_enabled():
-            generate_replenishment_report()
+        return generate_and_email_replenishment_report(
+            self.email_recipient(),
+            self.email_subject(),
+        )
+
+    def run_scheduled_report(self) -> None:
+        """Generate and email the configured automatic replenishment report."""
+
+        if self.automation_enabled() and self.email_recipient():
+            self.send_configured_report_email()
 
     def setup_urls(self):
         """Expose the simple Inventory Manager control panel."""

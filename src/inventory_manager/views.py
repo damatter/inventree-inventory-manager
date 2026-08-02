@@ -5,6 +5,13 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from .automation import PLUGIN_SLUG, ReportSetupError, queue_replenishment_report
+from .emailing import (
+    DEFAULT_EMAIL_SUBJECT,
+    ReportEmailError,
+    email_delivery_available,
+    normalize_recipient,
+    queue_replenishment_report_email,
+)
 
 
 def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
@@ -36,15 +43,49 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
         errors.append("Automatic report interval must be between 1 and 365 days.")
         interval = 7
 
+    automation_enabled = post_data.get("automation_enabled") == "on"
+    email_recipient = str(post_data.get("email_recipient", "") or "").strip()
+    email_subject = (
+        str(post_data.get("email_subject", "") or "").strip()
+        or DEFAULT_EMAIL_SUBJECT
+    )
+
+    if email_recipient:
+        try:
+            email_recipient = normalize_recipient(email_recipient)
+        except ReportEmailError as error:
+            errors.append(str(error))
+    elif automation_enabled:
+        errors.append(
+            "Enter a recipient email address before enabling automatic delivery."
+        )
+
     return (
         {
             "DEFAULT_MINIMUM_STOCK": default_minimum,
             "LOW_BUFFER_MULTIPLIER": float(low_buffer),
-            "AUTOMATION_ENABLED": post_data.get("automation_enabled") == "on",
+            "EMAIL_RECIPIENT": email_recipient,
+            "EMAIL_SUBJECT": email_subject,
+            "AUTOMATION_ENABLED": automation_enabled,
             "AUTOMATION_INTERVAL_DAYS": interval,
         },
         errors,
     )
+
+
+def _schedule_integration_enabled() -> bool:
+    """Return whether InvenTree allows plugins to register scheduled tasks."""
+
+    try:
+        from common.models import InvenTreeSetting
+
+        value = InvenTreeSetting.get_setting("ENABLE_PLUGINS_SCHEDULE")
+    except Exception:
+        return False
+
+    if isinstance(value, str):
+        return value.strip().casefold() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _rooted_url(url: str) -> str:
@@ -129,6 +170,27 @@ def control_panel(request, plugin):
                     messages.success(request, "Inventory Manager settings saved.")
                     return redirect(plugin.control_panel_url)
 
+            elif action == "send-report-email":
+                if not request.user.is_staff:
+                    raise PermissionDenied(
+                        "Only an InvenTree administrator can send report emails."
+                    )
+
+                recipient = plugin.email_recipient()
+                try:
+                    queue_replenishment_report_email(
+                        plugin.SLUG,
+                        recipient,
+                    )
+                except ReportEmailError as error:
+                    messages.error(request, str(error))
+                else:
+                    messages.success(
+                        request,
+                        f"Report email queued for {recipient}.",
+                    )
+                    return redirect(plugin.control_panel_url)
+
             elif action == "generate-report":
                 try:
                     output = queue_replenishment_report(request)
@@ -159,6 +221,10 @@ def control_panel(request, plugin):
             "low_buffer_multiplier": plugin._setting("LOW_BUFFER_MULTIPLIER", 2),
             "automation_enabled": plugin.automation_enabled(),
             "automation_interval_days": plugin.automation_interval_days(),
+            "email_recipient": plugin.email_recipient(),
+            "email_subject": plugin.email_subject(),
+            "email_configured": email_delivery_available(),
+            "schedule_integration_enabled": _schedule_integration_enabled(),
             "latest_outputs": latest_outputs,
         }
         return render(request, "inventory_manager/control_panel.html", context)

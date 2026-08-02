@@ -13,6 +13,8 @@ class SettingsValidationTests(unittest.TestCase):
                 "low_buffer_multiplier": "1.5",
                 "automation_interval_days": "7",
                 "automation_enabled": "on",
+                "email_recipient": " dad@example.com ",
+                "email_subject": "Weekly Stock Report",
             }
         )
 
@@ -21,6 +23,8 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(values["LOW_BUFFER_MULTIPLIER"], 1.5)
         self.assertTrue(values["AUTOMATION_ENABLED"])
         self.assertEqual(values["AUTOMATION_INTERVAL_DAYS"], 7)
+        self.assertEqual(values["EMAIL_RECIPIENT"], "dad@example.com")
+        self.assertEqual(values["EMAIL_SUBJECT"], "Weekly Stock Report")
 
     def test_invalid_values_return_safe_defaults(self) -> None:
         values, errors = _validate_settings(
@@ -36,6 +40,38 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(Decimal(str(values["LOW_BUFFER_MULTIPLIER"])), Decimal("2"))
         self.assertEqual(values["AUTOMATION_INTERVAL_DAYS"], 7)
         self.assertFalse(values["AUTOMATION_ENABLED"])
+
+    def test_automation_requires_a_recipient(self) -> None:
+        values, errors = _validate_settings(
+            {
+                "default_minimum_stock": "2",
+                "low_buffer_multiplier": "2",
+                "automation_interval_days": "7",
+                "automation_enabled": "on",
+            }
+        )
+
+        self.assertEqual(
+            errors,
+            [
+                "Enter a recipient email address before enabling automatic delivery."
+            ],
+        )
+        self.assertEqual(values["EMAIL_RECIPIENT"], "")
+        self.assertTrue(values["AUTOMATION_ENABLED"])
+
+    def test_invalid_recipient_is_rejected(self) -> None:
+        values, errors = _validate_settings(
+            {
+                "default_minimum_stock": "2",
+                "low_buffer_multiplier": "2",
+                "automation_interval_days": "7",
+                "email_recipient": "not-an-email",
+            }
+        )
+
+        self.assertEqual(errors, ["Enter a valid recipient email address."])
+        self.assertEqual(values["EMAIL_RECIPIENT"], "not-an-email")
 
 
 class OutputUrlTests(unittest.TestCase):

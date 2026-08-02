@@ -9,7 +9,8 @@ template. It provides:
 - healthy parts omitted from the actionable report;
 - a configurable replenishment target;
 - a simple screen for settings and one-click PDF generation; and
-- optional repeating report generation through InvenTree's background worker.
+- optional scheduled PDF delivery by email through InvenTree's background
+  worker.
 
 ## Stock rules
 
@@ -68,5 +69,22 @@ directly at `/plugin/inventory-manager/`.
 The large report button is available to authenticated users. Administrators
 can also change the default minimum, low-buffer multiplier, automation toggle,
 and automatic report interval. Automatic reports are retained in the Recent
-Reports list on the same screen. Email delivery is the next automation step.
+Reports list on the same screen.
 
+## Automatic email reporting
+
+Before using email delivery, configure and verify InvenTree's outgoing email
+settings. Then open the **Reporting** screen and:
+
+1. Enter one recipient email address and, optionally, customize the email
+   subject.
+2. Save the settings.
+3. Select **Send Test Report Now** and confirm that the PDF arrives as an email
+   attachment.
+4. Enable automatic reporting, choose the interval in days, and save the
+   settings again.
+
+Each scheduled job creates a new replenishment PDF, retains it in Recent
+Reports, and emails it to the saved recipient as an attachment. The first run
+is scheduled when the automation settings are saved; later runs repeat at the
+configured interval.

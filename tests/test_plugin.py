@@ -62,7 +62,7 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
-        self.assertEqual(plugin_class.VERSION, "0.2.7")
+        self.assertEqual(plugin_class.VERSION, "0.3.0")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -137,14 +137,87 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(action["title"], "Reporting")
         self.assertEqual(
             action["source"],
-            "/plugin/inventory-manager/reporting.js:openReporting?v=0.2.7",
+            "/plugin/inventory-manager/reporting.js:openReporting?v=0.3.0",
         )
         self.assertEqual(dashboard["title"], "Reporting")
         self.assertEqual(dashboard["options"], {"width": 3, "height": 2})
         self.assertEqual(
             dashboard["source"],
-            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.2.7",
+            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.3.0",
         )
+
+    def test_email_schedule_requires_enabled_automation_and_recipient(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        values = {
+            "AUTOMATION_ENABLED": True,
+            "AUTOMATION_INTERVAL_DAYS": 7,
+            "EMAIL_RECIPIENT": "dad@example.com",
+        }
+        plugin.get_setting = lambda key, **kwargs: values.get(
+            key, kwargs.get("backup_value")
+        )
+
+        task = plugin.get_scheduled_tasks()["replenishment_report"]
+
+        self.assertEqual(task["func"], "run_scheduled_report")
+        self.assertEqual(task["schedule"], "I")
+        self.assertEqual(task["minutes"], 7 * 24 * 60)
+        self.assertEqual(task["repeats"], -1)
+
+        values["EMAIL_RECIPIENT"] = ""
+        self.assertEqual(plugin.get_scheduled_tasks(), {})
+
+    def test_manual_email_uses_saved_recipient_and_subject(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        values = {
+            "EMAIL_RECIPIENT": "dad@example.com",
+            "EMAIL_SUBJECT": "Weekly Stock Report",
+            "AUTOMATION_ENABLED": False,
+        }
+        plugin.get_setting = lambda key, **kwargs: values.get(
+            key, kwargs.get("backup_value")
+        )
+
+        with patch.object(
+            module,
+            "generate_and_email_replenishment_report",
+            return_value="output",
+        ) as deliver:
+            result = plugin.send_configured_report_email()
+
+        self.assertEqual(result, "output")
+        deliver.assert_called_once_with(
+            "dad@example.com",
+            "Weekly Stock Report",
+        )
+
+    def test_scheduled_run_delivers_once_when_enabled(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        plugin.get_setting = lambda key, **kwargs: {
+            "AUTOMATION_ENABLED": True,
+            "EMAIL_RECIPIENT": "dad@example.com",
+        }.get(key, kwargs.get("backup_value"))
+
+        with patch.object(plugin, "send_configured_report_email") as deliver:
+            plugin.run_scheduled_report()
+
+        deliver.assert_called_once_with()
+
+    def test_scheduled_run_stops_when_automation_is_disabled(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        plugin.get_setting = lambda key, **kwargs: {
+            "AUTOMATION_ENABLED": False,
+            "EMAIL_RECIPIENT": "dad@example.com",
+        }.get(key, kwargs.get("backup_value"))
+
+        with patch.object(plugin, "send_configured_report_email") as deliver:
+            plugin.run_scheduled_report()
+
+        deliver.assert_not_called()
 
     def test_reporting_script_route_is_auth_exempt(self) -> None:
         module = import_plugin_module()

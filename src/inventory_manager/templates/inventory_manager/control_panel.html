@@ -23,10 +23,11 @@
         .card p { margin: 0 0 18px; color: #687681; line-height: 1.5; }
         .primary { width: 100%; min-height: 58px; padding: 14px 22px; border: 0; border-radius: 8px; background: #26734d; color: white; font-size: 18px; font-weight: 750; cursor: pointer; }
         .primary:hover { background: #1f6140; }
+        .primary:disabled, .secondary:disabled { opacity: 0.5; cursor: not-allowed; }
         .secondary { padding: 11px 20px; border: 0; border-radius: 7px; background: #344b5e; color: white; font-weight: 700; cursor: pointer; }
         .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
         label { display: block; margin-bottom: 7px; font-weight: 700; }
-        input[type="number"] { width: 100%; padding: 11px 12px; border: 1px solid #b8c2ca; border-radius: 6px; font: inherit; }
+        input[type="number"], input[type="email"], input[type="text"] { width: 100%; padding: 11px 12px; border: 1px solid #b8c2ca; border-radius: 6px; font: inherit; }
         .help { display: block; margin-top: 6px; color: #6d7982; font-size: 13px; line-height: 1.4; }
         .toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 8px; }
         .toggle input { width: 20px; height: 20px; }
@@ -37,6 +38,7 @@
         .reports li { margin: 8px 0; }
         .reports a { color: #225f91; font-weight: 650; }
         .locked { padding: 14px; border-radius: 7px; background: #f6f1df; color: #655419; }
+        .notice { margin-bottom: 18px; padding: 14px; border-radius: 7px; background: #f6f1df; color: #655419; line-height: 1.45; }
         .footer { margin-top: 18px; color: #7a858d; font-size: 12px; text-align: center; }
         @media (max-width: 680px) {
             .topbar { align-items: flex-start; flex-direction: column-reverse; }
@@ -77,6 +79,9 @@
         <h2>Report settings</h2>
         <p>These rules apply to both manual and automatic reports.</p>
         {% if is_staff %}
+        {% if not schedule_integration_enabled %}
+        <div class="notice">Automatic delivery also requires <strong>Plugin Schedule Integration</strong> to be enabled in InvenTree. Enable it and reload the plugins before relying on the schedule.</div>
+        {% endif %}
         <form method="post">
             {% csrf_token %}
             <input type="hidden" name="action" value="save-settings">
@@ -92,15 +97,25 @@
                     <span class="help">Example: 2 means stock below twice the minimum is low buffer.</span>
                 </div>
                 <div>
+                    <label for="email-recipient">Report recipient</label>
+                    <input id="email-recipient" name="email_recipient" type="email" value="{{ email_recipient }}" placeholder="name@example.com">
+                    <span class="help">The address that receives test and automatic reports.</span>
+                </div>
+                <div>
+                    <label for="email-subject">Email subject</label>
+                    <input id="email-subject" name="email_subject" type="text" value="{{ email_subject }}">
+                    <span class="help">Shown as the subject of each report email.</span>
+                </div>
+                <div>
                     <label for="report-interval">Automatic report interval</label>
                     <input id="report-interval" name="automation_interval_days" type="number" min="1" max="365" step="1" value="{{ automation_interval_days }}" required>
                     <span class="help">Use 7 for a weekly report.</span>
                 </div>
                 <div>
-                    <label>Automation</label>
+                    <label>Automatic delivery</label>
                     <label class="toggle" for="automation-enabled">
                         <input id="automation-enabled" name="automation_enabled" type="checkbox"{% if automation_enabled %} checked{% endif %}>
-                        Generate reports automatically
+                        Generate and email reports automatically
                     </label>
                     <span class="help">The first run is scheduled when these settings are saved.</span>
                 </div>
@@ -111,6 +126,26 @@
         </form>
         {% else %}
         <div class="locked">An InvenTree administrator can change these shared settings. The report button above is available to everyone.</div>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Send a test report</h2>
+        <p>Creates a fresh PDF and emails it to the saved report recipient.</p>
+        {% if is_staff %}
+            {% if not email_configured %}
+            <div class="notice">Outgoing email is not configured in InvenTree yet. Configure the InvenTree email server before sending or scheduling reports.</div>
+            {% elif not email_recipient %}
+            <div class="notice">Enter a report recipient above and save the settings before sending a test.</div>
+            {% endif %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="send-report-email">
+            <button class="primary" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send Test Report Now</button>
+        </form>
+        <span class="help">Use this once to confirm the PDF arrives before enabling automatic delivery.</span>
+        {% else %}
+        <div class="locked">An InvenTree administrator can send report emails.</div>
         {% endif %}
     </section>
 
