@@ -12,6 +12,25 @@ REPORT_NAME = "inventory replenishment report"
 REPORT_DESCRIPTION_MARKER = "[inventory-manager:replenishment]"
 
 
+def compact_stock_location(location: object | None) -> str:
+    """Return a concise root / leaf label for an InvenTree stock location."""
+
+    if location is None:
+        return ""
+
+    name = str(getattr(location, "name", "")).strip()
+    pathstring = str(getattr(location, "pathstring", "")).strip()
+    path_parts = [part.strip() for part in pathstring.split("/") if part.strip()]
+
+    root = path_parts[0] if path_parts else ""
+    leaf = name or (path_parts[-1] if path_parts else "")
+
+    if root and leaf and root.casefold() != leaf.casefold():
+        return f"{root}/{leaf}"
+
+    return leaf or root
+
+
 def is_replenishment_report_template(report_instance: object) -> bool:
     """Return whether an InvenTree template opts into replenishment context."""
 
@@ -41,6 +60,8 @@ def snapshots_from_inventree() -> list[PartStock]:
             "revision",
             "minimum_stock",
             "default_location",
+            "default_location__name",
+            "default_location__pathstring",
         )
     )
 
@@ -51,20 +72,31 @@ def snapshots_from_inventree() -> list[PartStock]:
     stock_items = (
         StockItem.objects.filter(StockItem.IN_STOCK_FILTER, part_id__in=part_ids)
         .select_related("location")
-        .only("part_id", "quantity", "location")
+        .only(
+            "part_id",
+            "quantity",
+            "location",
+            "location__name",
+            "location__pathstring",
+        )
     )
 
     for stock_item in stock_items.iterator():
         quantities[stock_item.part_id] += Decimal(stock_item.quantity)
-        if stock_item.location is not None:
-            locations[stock_item.part_id].add(str(stock_item.location))
+
+        location_label = compact_stock_location(stock_item.location)
+        if location_label:
+            locations[stock_item.part_id].add(location_label)
 
     snapshots = []
 
     for part in parts:
         part_locations = locations[part.pk]
-        if not part_locations and part.default_location is not None:
-            part_locations.add(str(part.default_location))
+
+        if not part_locations:
+            default_location_label = compact_stock_location(part.default_location)
+            if default_location_label:
+                part_locations.add(default_location_label)
 
         snapshots.append(
             PartStock(
