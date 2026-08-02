@@ -1,7 +1,7 @@
 from decimal import Decimal
 import unittest
 
-from inventory_manager.views import _validate_settings
+from inventory_manager.views import _output_error, _validate_settings
 
 
 class SettingsValidationTests(unittest.TestCase):
@@ -35,6 +35,18 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(Decimal(str(values["LOW_BUFFER_MULTIPLIER"])), Decimal("2"))
         self.assertEqual(values["AUTOMATION_INTERVAL_DAYS"], 7)
         self.assertFalse(values["AUTOMATION_ENABLED"])
+
+
+class OutputErrorTests(unittest.TestCase):
+    def test_structured_worker_error_is_readable(self) -> None:
+        output = type("Output", (), {"errors": {"error": "Worker failed"}})()
+
+        self.assertEqual(_output_error(output), "Worker failed")
+
+    def test_missing_worker_error_is_blank(self) -> None:
+        output = type("Output", (), {"errors": None})()
+
+        self.assertEqual(_output_error(output), "")
 
 
 if __name__ == "__main__":

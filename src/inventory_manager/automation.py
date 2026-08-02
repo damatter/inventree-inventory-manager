@@ -56,44 +56,59 @@ def report_anchor(template):
     return anchor
 
 
-def queue_replenishment_report(user: Any | None = None):
-    """Create a DataOutput and queue normal InvenTree PDF generation."""
+def _check_report_permission(user: Any | None, template) -> None:
+    """Apply the same model-view permission check as InvenTree report printing."""
+
+    if not user or not getattr(user, "is_authenticated", False):
+        return
+
+    from django.core.exceptions import PermissionDenied
+    from users.permissions import check_user_permission
+
+    if not check_user_permission(user, template.get_model(), "view"):
+        raise PermissionDenied(
+            "You do not have permission to view the report template model."
+        )
+
+
+def _tag_output(output):
+    """Mark a generated output as belonging to Inventory Manager."""
+
+    output.plugin = PLUGIN_SLUG
+    output.save(update_fields=["plugin"])
+    return output
+
+
+def queue_replenishment_report(request):
+    """Queue a PDF through the native print path of the installed InvenTree."""
 
     from common.models import DataOutput
-    from InvenTree.tasks import offload_task
-    import report.tasks
+    from report.api import ReportPrint
 
     template = find_replenishment_template()
     anchor = report_anchor(template)
-    authenticated_user = user if getattr(user, "is_authenticated", False) else None
+    _check_report_permission(getattr(request, "user", None), template)
 
-    if authenticated_user:
-        from django.core.exceptions import PermissionDenied
-        from users.permissions import check_user_permission
+    # Calling the installed ReportPrint implementation is important here. The
+    # background task signature changed between supported InvenTree releases.
+    response = ReportPrint().print(template, [anchor], request)
+    output_id = response.data.get("pk")
 
-        if not check_user_permission(authenticated_user, template.get_model(), "view"):
-            raise PermissionDenied(
-                "You do not have permission to view the report template model."
-            )
+    if not output_id:
+        raise ReportSetupError("InvenTree did not return a report job identifier.")
 
-    output = DataOutput.objects.create(
-        user=authenticated_user,
-        total=1,
-        progress=0,
-        complete=False,
-        output_type=DataOutput.DataOutputTypes.REPORT,
-        template_name=template.name,
-        plugin=PLUGIN_SLUG,
-        output=None,
-    )
+    output = DataOutput.objects.get(pk=output_id)
+    return _tag_output(output)
 
-    offload_task(
-        report.tasks.print_reports,
-        template.pk,
-        [anchor.pk],
-        output.pk,
-        authenticated_user.pk if authenticated_user else None,
-    )
 
-    output.refresh_from_db()
-    return output
+def generate_replenishment_report():
+    """Generate a PDF synchronously from an existing scheduled worker task."""
+
+    template = find_replenishment_template()
+    anchor = report_anchor(template)
+    output = template.print([anchor])
+
+    if output is None:
+        raise ReportSetupError("The scheduled report did not produce an output.")
+
+    return _tag_output(output)

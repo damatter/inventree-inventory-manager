@@ -29,30 +29,22 @@ class AutomationTests(unittest.TestCase):
         queryset.filter.assert_any_call(active=True, virtual=False)
         queryset.order_by.assert_called_once_with("pk")
 
-    def test_queue_report_uses_inventree_background_worker(self) -> None:
-        output = SimpleNamespace(pk=77, refresh_from_db=Mock())
+    def test_manual_queue_uses_installed_inventree_print_path(self) -> None:
+        output = SimpleNamespace(pk=77, plugin=None, save=Mock())
         output_manager = Mock()
-        output_manager.create.return_value = output
-        data_output = SimpleNamespace(
-            objects=output_manager,
-            DataOutputTypes=SimpleNamespace(REPORT="report"),
-        )
+        output_manager.get.return_value = output
+        data_output = SimpleNamespace(objects=output_manager)
         common_models = ModuleType("common.models")
         common_models.DataOutput = data_output
         common_package = ModuleType("common")
         common_package.models = common_models
 
-        print_reports = Mock()
-        report_tasks = ModuleType("report.tasks")
-        report_tasks.print_reports = print_reports
+        printer = Mock()
+        printer.print.return_value = SimpleNamespace(data={"pk": 77})
+        report_api = ModuleType("report.api")
+        report_api.ReportPrint = Mock(return_value=printer)
         report_package = ModuleType("report")
-        report_package.tasks = report_tasks
-
-        offload_task = Mock()
-        inventree_tasks = ModuleType("InvenTree.tasks")
-        inventree_tasks.offload_task = offload_task
-        inventree_package = ModuleType("InvenTree")
-        inventree_package.tasks = inventree_tasks
+        report_package.api = report_api
 
         class PermissionDenied(Exception):
             pass
@@ -77,14 +69,13 @@ class AutomationTests(unittest.TestCase):
         )
         anchor = SimpleNamespace(pk=6)
         user = SimpleNamespace(pk=9, is_authenticated=True)
+        request = SimpleNamespace(user=user)
 
         modules = {
             "common": common_package,
             "common.models": common_models,
             "report": report_package,
-            "report.tasks": report_tasks,
-            "InvenTree": inventree_package,
-            "InvenTree.tasks": inventree_tasks,
+            "report.api": report_api,
             "django": django_package,
             "django.core": django_core,
             "django.core.exceptions": django_exceptions,
@@ -97,22 +88,30 @@ class AutomationTests(unittest.TestCase):
             patch.object(automation, "find_replenishment_template", return_value=template),
             patch.object(automation, "report_anchor", return_value=anchor),
         ):
-            result = automation.queue_replenishment_report(user)
+            result = automation.queue_replenishment_report(request)
 
         self.assertIs(result, output)
-        output_manager.create.assert_called_once_with(
-            user=user,
-            total=1,
-            progress=0,
-            complete=False,
-            output_type="report",
-            template_name=template.name,
-            plugin="inventory-manager",
-            output=None,
-        )
-        offload_task.assert_called_once_with(print_reports, 5, [6], 77, 9)
+        printer.print.assert_called_once_with(template, [anchor], request)
         check_user_permission.assert_called_once_with(user, object, "view")
-        output.refresh_from_db.assert_called_once_with()
+        output_manager.get.assert_called_once_with(pk=77)
+        self.assertEqual(output.plugin, "inventory-manager")
+        output.save.assert_called_once_with(update_fields=["plugin"])
+
+    def test_scheduled_report_renders_inside_existing_worker(self) -> None:
+        output = SimpleNamespace(plugin=None, save=Mock())
+        anchor = SimpleNamespace(pk=6)
+        template = SimpleNamespace(print=Mock(return_value=output))
+
+        with (
+            patch.object(automation, "find_replenishment_template", return_value=template),
+            patch.object(automation, "report_anchor", return_value=anchor),
+        ):
+            result = automation.generate_replenishment_report()
+
+        self.assertIs(result, output)
+        template.print.assert_called_once_with([anchor])
+        self.assertEqual(output.plugin, "inventory-manager")
+        output.save.assert_called_once_with(update_fields=["plugin"])
 
 
 if __name__ == "__main__":

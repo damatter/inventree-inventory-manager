@@ -9,7 +9,7 @@ from plugin.mixins import (
     UserInterfaceMixin,
 )
 
-from .automation import queue_replenishment_report
+from .automation import generate_replenishment_report
 from .inventory import InventoryPolicy
 from .reports import build_report_context, is_replenishment_report_template
 
@@ -28,7 +28,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.0"
+    VERSION = "0.2.1"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
@@ -132,14 +132,21 @@ class InventoryManagerPlugin(
         """Queue the configured automatic replenishment report."""
 
         if self.automation_enabled():
-            queue_replenishment_report()
+            generate_replenishment_report()
 
     def setup_urls(self):
         """Expose the simple Inventory Manager control panel."""
 
         from django.urls import path
 
-        return [path("", self.control_panel_view, name="control-panel")]
+        return [
+            path("", self.control_panel_view, name="control-panel"),
+            path(
+                "report/<int:output_id>/",
+                self.report_status_view,
+                name="report-status",
+            ),
+        ]
 
     def control_panel_view(self, request):
         """Render the settings and manual report interface."""
@@ -147,6 +154,13 @@ class InventoryManagerPlugin(
         from .views import control_panel
 
         return control_panel(request, self)
+
+    def report_status_view(self, request, output_id: int):
+        """Show report progress and redirect to the completed PDF."""
+
+        from .views import report_status
+
+        return report_status(request, self, output_id)
 
     def get_ui_navigation_items(self, request, context, **kwargs):
         """Add Inventory Manager to the main InvenTree navigation."""
@@ -173,4 +187,3 @@ class InventoryManagerPlugin(
             return
 
         context.update(build_report_context(policy=self.get_inventory_policy()))
-

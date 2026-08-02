@@ -33,7 +33,6 @@
         .messages { margin-bottom: 18px; }
         .message { margin-bottom: 8px; padding: 12px 14px; border-radius: 7px; background: #e6f4eb; color: #205c39; }
         .message.error { background: #f9e2e2; color: #8a2424; }
-        .progress { display: none; margin-top: 14px; padding: 12px; border-radius: 7px; background: #edf4f8; text-align: center; }
         .reports { margin: 0; padding-left: 20px; }
         .reports li { margin: 8px 0; }
         .reports a { color: #225f91; font-weight: 650; }
@@ -72,7 +71,6 @@
             <input type="hidden" name="action" value="generate-report">
             <button class="primary" type="submit">Generate Replenishment Report</button>
         </form>
-        <div class="progress" id="report-progress">Generating your reportâ€¦</div>
     </section>
 
     <section class="card">
@@ -122,13 +120,13 @@
         <ul class="reports">
             {% for output in latest_outputs %}
             <li>
-                {{ output.created }} â€”
+                {{ output.created }} &mdash;
                 {% if output.url %}
                 <a href="{{ output.url }}" target="_blank" rel="noopener">Open PDF</a>
                 {% elif output.complete %}
                 Completed
                 {% else %}
-                Generatingâ€¦
+                Generating...
                 {% endif %}
             </li>
             {% endfor %}
@@ -136,40 +134,7 @@
     </section>
     {% endif %}
 
-    <div class="footer">INTERNAL - DiCor Engineering Â· Inventory Manager {{ plugin_version }}</div>
+    <div class="footer">INTERNAL - DiCor Engineering &middot; Inventory Manager {{ plugin_version }}</div>
 </main>
-
-{% if queued_output_id %}
-<script>
-    const progress = document.getElementById('report-progress');
-    progress.style.display = 'block';
-
-    async function monitorReport() {
-        try {
-            const response = await fetch('{{ queued_output_api|escapejs }}', {
-                credentials: 'same-origin',
-                headers: { 'Accept': 'application/json' }
-            });
-            const data = await response.json();
-
-            if (data.errors) {
-                progress.textContent = data.errors.error || 'The report could not be generated.';
-                return;
-            }
-            if (data.complete && data.output) {
-                progress.textContent = 'Report ready. Opening PDFâ€¦';
-                window.location.assign(new URL(data.output, window.location.origin));
-                return;
-            }
-        } catch (error) {
-            progress.textContent = 'Still working. Check Recent reports in a moment.';
-            return;
-        }
-        window.setTimeout(monitorReport, 700);
-    }
-
-    monitorReport();
-</script>
-{% endif %}
 </body>
 </html>

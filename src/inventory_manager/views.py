@@ -56,6 +56,17 @@ def _output_url(output) -> str:
         return ""
 
 
+def _output_error(output) -> str:
+    """Return a readable error from an InvenTree DataOutput."""
+
+    errors = getattr(output, "errors", None)
+    if not errors:
+        return ""
+    if isinstance(errors, dict):
+        return str(errors.get("error") or errors.get("detail") or errors)
+    return str(errors)
+
+
 def control_panel(request, plugin):
     """Handle settings updates and manual report generation."""
 
@@ -63,12 +74,9 @@ def control_panel(request, plugin):
     from django.contrib.auth.decorators import login_required
     from django.core.exceptions import PermissionDenied
     from django.shortcuts import redirect, render
-    from django.urls import reverse
 
     @login_required
     def authenticated_view(request):
-        queued_output = None
-
         if request.method == "POST":
             action = request.POST.get("action")
 
@@ -91,14 +99,11 @@ def control_panel(request, plugin):
 
             elif action == "generate-report":
                 try:
-                    queued_output = queue_replenishment_report(request.user)
+                    output = queue_replenishment_report(request)
                 except ReportSetupError as error:
                     messages.error(request, str(error))
                 else:
-                    messages.success(
-                        request,
-                        "The report is being generated. It will open automatically.",
-                    )
+                    return redirect(f"{plugin.base_url}report/{output.pk}/")
 
         from common.models import DataOutput
 
@@ -122,13 +127,48 @@ def control_panel(request, plugin):
             "automation_enabled": plugin.automation_enabled(),
             "automation_interval_days": plugin.automation_interval_days(),
             "latest_outputs": latest_outputs,
-            "queued_output_id": getattr(queued_output, "pk", None),
-            "queued_output_api": (
-                reverse("api-data-output-detail", kwargs={"pk": queued_output.pk})
-                if queued_output
-                else ""
-            ),
         }
         return render(request, "inventory_manager/control_panel.html", context)
+
+    return authenticated_view(request)
+
+
+def report_status(request, plugin, output_id: int):
+    """Wait for a report job, then redirect straight to its generated file."""
+
+    from common.models import DataOutput
+    from django.contrib import messages
+    from django.contrib.auth.decorators import login_required
+    from django.shortcuts import get_object_or_404, redirect, render
+
+    @login_required
+    def authenticated_view(request):
+        outputs = DataOutput.objects.filter(pk=output_id, plugin=PLUGIN_SLUG)
+        if not request.user.is_staff:
+            outputs = outputs.filter(user=request.user)
+
+        output = get_object_or_404(outputs)
+
+        if error := _output_error(output):
+            messages.error(request, f"Report generation failed: {error}")
+            return redirect(plugin.base_url)
+
+        if output.complete:
+            if url := _output_url(output):
+                return redirect(url)
+            messages.error(request, "The report completed without a downloadable file.")
+            return redirect(plugin.base_url)
+
+        return render(
+            request,
+            "inventory_manager/report_status.html",
+            {
+                "plugin_title": plugin.TITLE,
+                "output_id": output.pk,
+                "progress": output.progress,
+                "total": output.total,
+                "control_panel_url": plugin.base_url,
+            },
+        )
 
     return authenticated_view(request)
