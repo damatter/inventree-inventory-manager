@@ -98,13 +98,18 @@
 
 .stock-table {
     width: 100%;
-    margin: 0;
+    margin: 0 auto;
     border-collapse: collapse;
     table-layout: fixed;
 }
 
 .stock-table thead { display: table-header-group; }
 .stock-table tr { page-break-inside: avoid; }
+
+.stock-table th,
+.stock-table td {
+    box-sizing: border-box;
+}
 
 .stock-table th {
     padding: 9px 7px;
