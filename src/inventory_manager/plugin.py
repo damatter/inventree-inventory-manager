@@ -28,7 +28,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.3"
+    VERSION = "0.2.4"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
@@ -145,8 +145,14 @@ class InventoryManagerPlugin(
 
         from django.urls import path
 
+        from InvenTree.permissions import auth_exempt
+
         return [
-            path("reporting.js", self.reporting_script_view, name="reporting-script"),
+            path(
+                "reporting.js",
+                auth_exempt(self.reporting_script_view),
+                name="reporting-script",
+            ),
             path("", self.control_panel_view, name="control-panel"),
             path(
                 "report/<int:output_id>/",

@@ -62,7 +62,7 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
-        self.assertEqual(plugin_class.VERSION, "0.2.3")
+        self.assertEqual(plugin_class.VERSION, "0.2.4")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -144,6 +144,42 @@ class PluginTests(unittest.TestCase):
             dashboard["source"],
             "/plugin/inventory-manager/reporting.js:renderReportingShortcut",
         )
+
+    def test_reporting_script_route_is_auth_exempt(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+
+        django_package = ModuleType("django")
+        django_urls = ModuleType("django.urls")
+        inventree_package = ModuleType("InvenTree")
+        inventree_permissions = ModuleType("InvenTree.permissions")
+
+        def path(route, callback, name):
+            return SimpleNamespace(route=route, callback=callback, name=name)
+
+        def auth_exempt(callback):
+            def wrapped(*args, **kwargs):
+                return callback(*args, **kwargs)
+
+            wrapped.auth_exempt = True
+            return wrapped
+
+        django_urls.path = path
+        inventree_permissions.auth_exempt = auth_exempt
+
+        with patch.dict(
+            sys.modules,
+            {
+                "django": django_package,
+                "django.urls": django_urls,
+                "InvenTree": inventree_package,
+                "InvenTree.permissions": inventree_permissions,
+            },
+        ):
+            routes = plugin.setup_urls()
+
+        self.assertEqual(routes[0].route, "reporting.js")
+        self.assertTrue(routes[0].callback.auth_exempt)
 
 
 if __name__ == "__main__":
