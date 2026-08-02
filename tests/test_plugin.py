@@ -8,6 +8,9 @@ from unittest.mock import patch
 class FakeInvenTreePlugin:
     """Minimal stand-in for the InvenTree plugin base class."""
 
+    def plugin_static_file(self, filename):
+        return f"/static/plugins/inventory-manager/{filename}"
+
 
 class FakeReportMixin:
     """Minimal stand-in for InvenTree's report mixin."""
@@ -26,9 +29,9 @@ class FakeScheduleMixin:
 
 
 class FakeUrlsMixin:
-    """Minimal stand-in for InvenTree's URL mixin."""
+    """Minimal stand-in for InvenTree 1.3.5's URL mixin."""
 
-    base_url = "/plugin/inventory-manager/"
+    base_url = "plugin/inventory-manager/"
 
 
 class FakeUserInterfaceMixin:
@@ -62,7 +65,7 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
-        self.assertEqual(plugin_class.VERSION, "0.2.1")
+        self.assertEqual(plugin_class.VERSION, "0.2.2")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -115,14 +118,29 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(str(policy.assumed_minimum), "4")
         self.assertEqual(str(policy.target_multiplier), "1.5")
 
-    def test_navigation_item_opens_control_panel(self) -> None:
+    def test_control_panel_url_is_root_relative(self) -> None:
         module = import_plugin_module()
         plugin = module.InventoryManagerPlugin()
 
-        items = plugin.get_ui_navigation_items(object(), {})
+        self.assertEqual(plugin.control_panel_url, "/plugin/inventory-manager/")
 
-        self.assertEqual(items[0]["title"], "Inventory Manager")
-        self.assertEqual(items[0]["options"]["url"], "/plugin/inventory-manager/")
+    def test_broken_spa_navigation_item_is_not_registered(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+
+        self.assertEqual(plugin.get_ui_navigation_items(object(), {}), [])
+
+    def test_reporting_shortcuts_are_registered(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+
+        action = plugin.get_ui_spotlight_actions(object(), {})[0]
+        dashboard = plugin.get_ui_dashboard_items(object(), {})[0]
+
+        self.assertEqual(action["title"], "Reporting")
+        self.assertIn("reporting.js:openReporting", action["source"])
+        self.assertEqual(dashboard["title"], "Reporting")
+        self.assertIn("reporting.js:renderReportingShortcut", dashboard["source"])
 
 
 if __name__ == "__main__":

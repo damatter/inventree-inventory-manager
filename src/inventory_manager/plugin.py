@@ -28,7 +28,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.1"
+    VERSION = "0.2.2"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
@@ -64,6 +64,12 @@ class InventoryManagerPlugin(
             "units": "days",
         },
     }
+
+    @property
+    def control_panel_url(self) -> str:
+        """Return the plugin URL as a root-relative browser address."""
+
+        return f"/{self.base_url.lstrip('/')}"
 
     def get_inventory_policy(self) -> InventoryPolicy:
         """Build the current report policy from persistent plugin settings."""
@@ -163,16 +169,40 @@ class InventoryManagerPlugin(
         return report_status(request, self, output_id)
 
     def get_ui_navigation_items(self, request, context, **kwargs):
-        """Add Inventory Manager to the main InvenTree navigation."""
+        """Avoid InvenTree's SPA-only navigation tabs for this server page."""
+
+        del request, context, kwargs
+        return []
+
+    def get_ui_spotlight_actions(self, request, context, **kwargs):
+        """Provide a working Reporting command in InvenTree search."""
 
         del request, context, kwargs
         return [
             {
-                "key": "inventory-manager",
-                "title": "Inventory Manager",
-                "description": "Stock reports and replenishment settings",
+                "key": "open-reporting",
+                "title": "Reporting",
+                "description": "Open stock reports and replenishment settings",
                 "icon": "ti:report-analytics",
-                "options": {"url": self.base_url},
+                "source": self.plugin_static_file(
+                    "reporting.js:openReporting"
+                ),
+            }
+        ]
+
+    def get_ui_dashboard_items(self, request, context, **kwargs):
+        """Offer an optional one-click Reporting dashboard card."""
+
+        del request, context, kwargs
+        return [
+            {
+                "key": "reporting-shortcut",
+                "title": "Reporting",
+                "description": "Stock reports and replenishment settings",
+                "source": self.plugin_static_file(
+                    "reporting.js:renderReportingShortcut"
+                ),
+                "options": {"width": 2, "height": 1},
             }
         ]
 

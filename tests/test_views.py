@@ -1,7 +1,8 @@
 from decimal import Decimal
+from types import SimpleNamespace
 import unittest
 
-from inventory_manager.views import _output_error, _validate_settings
+from inventory_manager.views import _output_error, _output_url, _validate_settings
 
 
 class SettingsValidationTests(unittest.TestCase):
@@ -35,6 +36,20 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(Decimal(str(values["LOW_BUFFER_MULTIPLIER"])), Decimal("2"))
         self.assertEqual(values["AUTOMATION_INTERVAL_DAYS"], 7)
         self.assertFalse(values["AUTOMATION_ENABLED"])
+
+
+class OutputUrlTests(unittest.TestCase):
+    def test_local_output_url_is_root_relative(self) -> None:
+        output = SimpleNamespace(output=SimpleNamespace(url="media/report.pdf"))
+
+        self.assertEqual(_output_url(output), "/media/report.pdf")
+
+    def test_absolute_output_url_is_preserved(self) -> None:
+        output = SimpleNamespace(
+            output=SimpleNamespace(url="https://files.example/report.pdf")
+        )
+
+        self.assertEqual(_output_url(output), "https://files.example/report.pdf")
 
 
 class OutputErrorTests(unittest.TestCase):

@@ -47,13 +47,22 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
     )
 
 
+def _rooted_url(url: str) -> str:
+    """Make a local browser URL root-relative while preserving absolute URLs."""
+
+    if not url or url.startswith(("/", "http://", "https://")):
+        return url
+    return f"/{url}"
+
+
 def _output_url(output) -> str:
     """Return a generated file URL without failing for incomplete jobs."""
 
     try:
-        return output.output.url if output.output else ""
+        url = output.output.url if output.output else ""
     except (AttributeError, ValueError):
         return ""
+    return _rooted_url(url)
 
 
 def _output_error(output) -> str:
@@ -95,7 +104,7 @@ def control_panel(request, plugin):
                         plugin.set_setting(key, value, user=request.user)
                     plugin.refresh_automation_schedule()
                     messages.success(request, "Inventory Manager settings saved.")
-                    return redirect(plugin.base_url)
+                    return redirect(plugin.control_panel_url)
 
             elif action == "generate-report":
                 try:
@@ -103,7 +112,10 @@ def control_panel(request, plugin):
                 except ReportSetupError as error:
                     messages.error(request, str(error))
                 else:
-                    return redirect(f"{plugin.base_url}report/{output.pk}/")
+                    status_url = (
+                        f"{plugin.control_panel_url}report/{output.pk}/"
+                    )
+                    return redirect(status_url)
 
         from common.models import DataOutput
 
@@ -151,13 +163,13 @@ def report_status(request, plugin, output_id: int):
 
         if error := _output_error(output):
             messages.error(request, f"Report generation failed: {error}")
-            return redirect(plugin.base_url)
+            return redirect(plugin.control_panel_url)
 
         if output.complete:
             if url := _output_url(output):
                 return redirect(url)
             messages.error(request, "The report completed without a downloadable file.")
-            return redirect(plugin.base_url)
+            return redirect(plugin.control_panel_url)
 
         return render(
             request,
@@ -167,7 +179,7 @@ def report_status(request, plugin, output_id: int):
                 "output_id": output.pk,
                 "progress": output.progress,
                 "total": output.total,
-                "control_panel_url": plugin.base_url,
+                "control_panel_url": plugin.control_panel_url,
             },
         )
 
