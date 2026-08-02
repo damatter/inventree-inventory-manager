@@ -76,6 +76,29 @@ def _output_error(output) -> str:
     return str(errors)
 
 
+def reporting_script(request):
+    """Serve the small Reporting UI module directly from the plugin package."""
+
+    from pathlib import Path
+
+    from django.http import HttpResponse
+
+    del request
+    script_path = (
+        Path(__file__).parent
+        / "static"
+        / "plugins"
+        / "inventory-manager"
+        / "reporting.js"
+    )
+    response = HttpResponse(
+        script_path.read_text(encoding="utf-8"),
+        content_type="text/javascript; charset=utf-8",
+    )
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
 def control_panel(request, plugin):
     """Handle settings updates and manual report generation."""
 
@@ -112,9 +135,7 @@ def control_panel(request, plugin):
                 except ReportSetupError as error:
                     messages.error(request, str(error))
                 else:
-                    status_url = (
-                        f"{plugin.control_panel_url}report/{output.pk}/"
-                    )
+                    status_url = f"{plugin.control_panel_url}report/{output.pk}/"
                     return redirect(status_url)
 
         from common.models import DataOutput
@@ -146,7 +167,7 @@ def control_panel(request, plugin):
 
 
 def report_status(request, plugin, output_id: int):
-    """Wait for a report job, then redirect straight to its generated file."""
+    """Wait for a report job, then download it and return to Reporting."""
 
     from common.models import DataOutput
     from django.contrib import messages
@@ -167,7 +188,14 @@ def report_status(request, plugin, output_id: int):
 
         if output.complete:
             if url := _output_url(output):
-                return redirect(url)
+                return render(
+                    request,
+                    "inventory_manager/report_complete.html",
+                    {
+                        "download_url": url,
+                        "control_panel_url": plugin.control_panel_url,
+                    },
+                )
             messages.error(request, "The report completed without a downloadable file.")
             return redirect(plugin.control_panel_url)
 

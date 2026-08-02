@@ -28,7 +28,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.2"
+    VERSION = "0.2.3"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
@@ -146,6 +146,7 @@ class InventoryManagerPlugin(
         from django.urls import path
 
         return [
+            path("reporting.js", self.reporting_script_view, name="reporting-script"),
             path("", self.control_panel_view, name="control-panel"),
             path(
                 "report/<int:output_id>/",
@@ -168,6 +169,13 @@ class InventoryManagerPlugin(
 
         return report_status(request, self, output_id)
 
+    def reporting_script_view(self, request):
+        """Serve the Reporting UI helper without relying on collectstatic."""
+
+        from .views import reporting_script
+
+        return reporting_script(request)
+
     def get_ui_navigation_items(self, request, context, **kwargs):
         """Avoid InvenTree's SPA-only navigation tabs for this server page."""
 
@@ -184,9 +192,7 @@ class InventoryManagerPlugin(
                 "title": "Reporting",
                 "description": "Open stock reports and replenishment settings",
                 "icon": "ti:report-analytics",
-                "source": self.plugin_static_file(
-                    "reporting.js:openReporting"
-                ),
+                "source": f"{self.control_panel_url}reporting.js:openReporting",
             }
         ]
 
@@ -199,8 +205,8 @@ class InventoryManagerPlugin(
                 "key": "reporting-shortcut",
                 "title": "Reporting",
                 "description": "Stock reports and replenishment settings",
-                "source": self.plugin_static_file(
-                    "reporting.js:renderReportingShortcut"
+                "source": (
+                    f"{self.control_panel_url}reporting.js:renderReportingShortcut"
                 ),
                 "options": {"width": 2, "height": 1},
             }

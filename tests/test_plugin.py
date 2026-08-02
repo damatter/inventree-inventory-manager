@@ -8,9 +8,6 @@ from unittest.mock import patch
 class FakeInvenTreePlugin:
     """Minimal stand-in for the InvenTree plugin base class."""
 
-    def plugin_static_file(self, filename):
-        return f"/static/plugins/inventory-manager/{filename}"
-
 
 class FakeReportMixin:
     """Minimal stand-in for InvenTree's report mixin."""
@@ -65,7 +62,7 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
-        self.assertEqual(plugin_class.VERSION, "0.2.2")
+        self.assertEqual(plugin_class.VERSION, "0.2.3")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -130,7 +127,7 @@ class PluginTests(unittest.TestCase):
 
         self.assertEqual(plugin.get_ui_navigation_items(object(), {}), [])
 
-    def test_reporting_shortcuts_are_registered(self) -> None:
+    def test_reporting_shortcuts_use_plugin_served_script(self) -> None:
         module = import_plugin_module()
         plugin = module.InventoryManagerPlugin()
 
@@ -138,9 +135,15 @@ class PluginTests(unittest.TestCase):
         dashboard = plugin.get_ui_dashboard_items(object(), {})[0]
 
         self.assertEqual(action["title"], "Reporting")
-        self.assertIn("reporting.js:openReporting", action["source"])
+        self.assertEqual(
+            action["source"],
+            "/plugin/inventory-manager/reporting.js:openReporting",
+        )
         self.assertEqual(dashboard["title"], "Reporting")
-        self.assertIn("reporting.js:renderReportingShortcut", dashboard["source"])
+        self.assertEqual(
+            dashboard["source"],
+            "/plugin/inventory-manager/reporting.js:renderReportingShortcut",
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="4;url={{ control_panel_url }}">
+    <title>Report Ready</title>
+    <style>
+        :root {
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #263746;
+            background: #f3f5f7;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        .shell { display: grid; min-height: 100vh; padding: 20px; place-items: center; }
+        .card { width: min(560px, 100%); padding: 34px; border: 1px solid #d7dde2; border-radius: 12px; background: white; box-shadow: 0 3px 14px rgb(35 52 66 / 9%); text-align: center; }
+        .check { display: grid; width: 48px; height: 48px; margin: 0 auto 20px; border-radius: 50%; background: #26734d; color: white; font-size: 30px; place-items: center; }
+        h1 { margin: 0 0 10px; font-size: 25px; }
+        p { margin: 0 0 18px; color: #687681; line-height: 1.5; }
+        a { color: #344b5e; font-weight: 700; }
+        iframe { display: none; }
+    </style>
+</head>
+<body>
+<main class="shell">
+    <section class="card">
+        <div class="check" aria-hidden="true">&#10003;</div>
+        <h1>Your report is ready</h1>
+        <p>The PDF download has started. Returning to Reporting...</p>
+        <a href="{{ download_url }}">Download the PDF again</a>
+        &middot;
+        <a href="{{ control_panel_url }}">Return now</a>
+    </section>
+</main>
+<iframe src="{{ download_url }}" title="Report download"></iframe>
+<script>
+    window.setTimeout(function () {
+        window.location.replace("{{ control_panel_url|escapejs }}");
+    }, 4000);
+</script>
+</body>
+</html>
