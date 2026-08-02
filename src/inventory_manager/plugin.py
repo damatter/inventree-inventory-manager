@@ -28,7 +28,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.2.4"
+    VERSION = "0.2.5"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"

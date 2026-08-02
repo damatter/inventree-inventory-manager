@@ -4,7 +4,7 @@ export function openReporting() {
     window.location.assign(REPORTING_URL);
 }
 
-export function renderReportingShortcut(target) {
+export function renderReportingShortcut(target, context) {
     if (!target) {
         return;
     }
@@ -23,5 +23,8 @@ export function renderReportingShortcut(target) {
     link.style.fontWeight = "600";
     link.style.textDecoration = "none";
 
-    target.replaceChildren(description, link);
+    void context;
+    target.innerHTML = "";
+    target.appendChild(description);
+    target.appendChild(link);
 }
