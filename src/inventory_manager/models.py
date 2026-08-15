@@ -10,6 +10,7 @@ class StockEntryReportRun(models.Model):
     class Kind(models.TextChoices):
         MANUAL = "manual", "Manual date range"
         MONTHLY = "monthly", "Monthly delivery"
+        SCHEDULED = "scheduled", "Scheduled delivery"
 
     class Status(models.TextChoices):
         GENERATED = "generated", "Generated"
@@ -23,7 +24,7 @@ class StockEntryReportRun(models.Model):
         verbose_name_plural = "Stock Entry Report Runs"
 
     kind = models.CharField(max_length=12, choices=Kind.choices)
-    period_key = models.CharField(max_length=7, unique=True, null=True, blank=True)
+    period_key = models.CharField(max_length=32, unique=True, null=True, blank=True)
     period_start = models.DateField()
     period_end = models.DateField()
     status = models.CharField(
@@ -32,7 +33,7 @@ class StockEntryReportRun(models.Model):
         default=Status.GENERATED,
     )
     output_id = models.PositiveIntegerField(null=True, blank=True)
-    recipient = models.EmailField(blank=True, default="")
+    recipient = models.CharField(max_length=1000, blank=True, default="")
     error = models.TextField(blank=True, default="")
     created = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True)

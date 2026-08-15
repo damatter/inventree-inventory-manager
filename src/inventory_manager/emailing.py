@@ -17,15 +17,34 @@ class ReportEmailError(RuntimeError):
     """Raised when a replenishment report email cannot be delivered."""
 
 
-def normalize_recipient(value: object) -> str:
-    """Return one validated recipient email address."""
+def normalize_recipients(value: object) -> list[str]:
+    """Return a validated, de-duplicated list of recipient addresses."""
 
-    recipient = str(value or "").strip()
-    if not recipient:
-        raise ReportEmailError("Enter a recipient email address first.")
-    if not _EMAIL_PATTERN.fullmatch(recipient):
-        raise ReportEmailError("Enter a valid recipient email address.")
-    return recipient
+    raw_values = re.split(r"[,;\n]+", str(value or ""))
+    recipients = []
+    seen = set()
+    for raw_value in raw_values:
+        address = raw_value.strip()
+        if not address:
+            continue
+        if not _EMAIL_PATTERN.fullmatch(address):
+            raise ReportEmailError(f"Enter a valid recipient email address: {address}")
+        normalized = address.casefold()
+        if normalized not in seen:
+            recipients.append(address)
+            seen.add(normalized)
+
+    if not recipients:
+        raise ReportEmailError("Enter at least one recipient email address first.")
+    if len(recipients) > 20:
+        raise ReportEmailError("Use no more than 20 report recipients.")
+    return recipients
+
+
+def normalize_recipient(value: object) -> str:
+    """Return recipient addresses in their canonical stored form."""
+
+    return ", ".join(normalize_recipients(value))
 
 
 def email_delivery_available() -> bool:
@@ -69,10 +88,11 @@ def send_replenishment_report_email(
     output: Any,
     recipient: object,
     subject: object = DEFAULT_EMAIL_SUBJECT,
+    csv_content: bytes | None = None,
 ) -> int:
     """Email a generated DataOutput PDF through InvenTree's mail backend."""
 
-    address = normalize_recipient(recipient)
+    addresses = normalize_recipients(recipient)
     email_subject = str(subject or "").strip() or DEFAULT_EMAIL_SUBJECT
 
     if not email_delivery_available():
@@ -97,9 +117,15 @@ def send_replenishment_report_email(
         subject=email_subject,
         body=body,
         from_email=sender,
-        to=[address],
+        to=addresses,
     )
     message.attach(filename, attachment, "application/pdf")
+    if csv_content:
+        message.attach(
+            f"inventory-replenishment-{date.today().isoformat()}.csv",
+            csv_content,
+            "text/csv",
+        )
 
     try:
         sent = int(message.send(fail_silently=False) or 0)
@@ -116,12 +142,13 @@ def send_stock_entry_report_email(
     recipient: object,
     start: date,
     end: date,
-    subject: object = "DiCor Monthly Stock Entry Report",
+    subject: object = "DiCor Stock Entry Report",
+    csv_content: bytes | None = None,
 ) -> int:
     """Email an inventory-inflow PDF with an accounting acknowledgement reminder."""
 
-    address = normalize_recipient(recipient)
-    email_subject = str(subject or "").strip() or "DiCor Monthly Stock Entry Report"
+    addresses = normalize_recipients(recipient)
+    email_subject = str(subject or "").strip() or "DiCor Stock Entry Report"
     if not email_delivery_available():
         raise ReportEmailError("InvenTree's outgoing email server is not configured.")
 
@@ -133,7 +160,7 @@ def send_stock_entry_report_email(
         raise ReportEmailError("InvenTree does not have a default sender address.")
 
     message = EmailMessage(
-        subject=f"{email_subject} - {start:%B %Y}",
+        subject=f"{email_subject} - {start.isoformat()} to {end.isoformat()}",
         body=(
             f"Attached are inventory inflows recorded from {start} through {end}.\n\n"
             "After posting the totals, open Reporting in InvenTree and mark this period "
@@ -141,13 +168,19 @@ def send_stock_entry_report_email(
             "INTERNAL - DiCor Engineering"
         ),
         from_email=sender,
-        to=[address],
+        to=addresses,
     )
     message.attach(
         f"stock-entries-{start.isoformat()}-to-{end.isoformat()}.pdf",
         _read_report_pdf(output),
         "application/pdf",
     )
+    if csv_content:
+        message.attach(
+            f"stock-entries-{start.isoformat()}-to-{end.isoformat()}.csv",
+            csv_content,
+            "text/csv",
+        )
     try:
         sent = int(message.send(fail_silently=False) or 0)
     except Exception as error:
@@ -160,11 +193,12 @@ def send_stock_entry_report_email(
 def generate_and_email_replenishment_report(
     recipient: object,
     subject: object = DEFAULT_EMAIL_SUBJECT,
+    csv_content: bytes | None = None,
 ):
     """Generate the current PDF and email it from an existing worker task."""
 
     output = generate_replenishment_report()
-    send_replenishment_report_email(output, recipient, subject)
+    send_replenishment_report_email(output, recipient, subject, csv_content)
     return output
 
 
@@ -200,4 +234,34 @@ def queue_replenishment_report_email(
 
     if not task:
         raise ReportEmailError("InvenTree could not queue the report email.")
+    return task
+
+
+def queue_stock_entry_test_email(plugin_slug: object, recipient: object):
+    """Queue a non-registering stock-entry test delivery."""
+
+    slug = str(plugin_slug or "").strip()
+    if not slug:
+        raise ReportEmailError("The Inventory Manager plugin is not available.")
+
+    normalize_recipients(recipient)
+    if not email_delivery_available():
+        raise ReportEmailError("InvenTree's outgoing email server is not configured.")
+
+    from InvenTree.tasks import offload_task
+
+    try:
+        task = offload_task(
+            "plugin.registry.call_plugin_function",
+            slug,
+            "send_stock_entry_test_email",
+            group="inventory-manager-stock-entry-email",
+        )
+    except Exception as error:
+        raise ReportEmailError(
+            f"InvenTree could not queue the stock-entry test email: {error}"
+        ) from error
+
+    if not task:
+        raise ReportEmailError("InvenTree could not queue the stock-entry test email.")
     return task

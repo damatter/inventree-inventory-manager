@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from .reports import (
@@ -142,11 +143,11 @@ def generate_stock_entry_report(start, end, request=None):
     anchor = report_anchor(template)
     _check_report_permission(getattr(request, "user", None), template)
 
-    if request is not None:
-        request.inventory_manager_period_start = start
-        request.inventory_manager_period_end = end
+    report_request = request or SimpleNamespace(user=None)
+    report_request.inventory_manager_period_start = start
+    report_request.inventory_manager_period_end = end
 
-    output = template.print([anchor], request=request)
+    output = template.print([anchor], request=report_request)
     if output is None:
         raise ReportSetupError("The stock-entry report did not produce an output.")
     return _tag_output(output)
