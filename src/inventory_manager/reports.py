@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from decimal import Decimal
-from typing import Iterable
 
 from .inventory import InventoryPolicy, PartStock, build_replenishment_report
 
 REPORT_NAME = "inventory replenishment report"
 REPORT_DESCRIPTION_MARKER = "[inventory-manager:replenishment]"
+STOCK_ENTRY_REPORT_NAME = "monthly stock entry report"
+STOCK_ENTRY_DESCRIPTION_MARKER = "[inventory-manager:stock-entries]"
 
 
 def compact_stock_location(location: object | None) -> str:
@@ -37,6 +39,14 @@ def is_replenishment_report_template(report_instance: object) -> bool:
     name = str(getattr(report_instance, "name", "")).strip().casefold()
     description = str(getattr(report_instance, "description", "")).casefold()
     return name == REPORT_NAME or REPORT_DESCRIPTION_MARKER in description
+
+
+def is_stock_entry_report_template(report_instance: object) -> bool:
+    """Return whether a template opts into stock-entry report context."""
+
+    name = str(getattr(report_instance, "name", "")).strip().casefold()
+    description = str(getattr(report_instance, "description", "")).casefold()
+    return name == STOCK_ENTRY_REPORT_NAME or STOCK_ENTRY_DESCRIPTION_MARKER in description
 
 
 def snapshots_from_inventree() -> list[PartStock]:
@@ -122,4 +132,3 @@ def build_report_context(
         snapshots = snapshots_from_inventree()
 
     return build_replenishment_report(snapshots, policy=policy).as_context()
-

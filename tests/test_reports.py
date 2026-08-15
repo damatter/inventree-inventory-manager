@@ -1,12 +1,13 @@
+import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-import unittest
 
 from inventory_manager.inventory import PartStock
 from inventory_manager.reports import (
     build_report_context,
     compact_stock_location,
     is_replenishment_report_template,
+    is_stock_entry_report_template,
 )
 
 
@@ -47,6 +48,15 @@ class ReportAdapterTests(unittest.TestCase):
 
         self.assertFalse(is_replenishment_report_template(report))
 
+    def test_stock_entry_marker_opts_into_the_separate_context(self) -> None:
+        report = SimpleNamespace(
+            name="Accounting inflows",
+            description="[inventory-manager:stock-entries]",
+        )
+
+        self.assertTrue(is_stock_entry_report_template(report))
+        self.assertFalse(is_replenishment_report_template(report))
+
     def test_context_can_be_built_without_django(self) -> None:
         snapshots = [
             PartStock(
@@ -66,4 +76,3 @@ class ReportAdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

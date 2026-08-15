@@ -2,6 +2,7 @@
 
 from plugin import InvenTreePlugin
 from plugin.mixins import (
+    AppMixin,
     ReportMixin,
     ScheduleMixin,
     SettingsMixin,
@@ -12,10 +13,16 @@ from plugin.mixins import (
 from .emailing import (
     DEFAULT_EMAIL_SUBJECT,
     generate_and_email_replenishment_report,
+    send_stock_entry_report_email,
 )
 from .inventory import InventoryPolicy
 from .mobile import MobileAppMixin
-from .reports import build_report_context, is_replenishment_report_template
+from .reports import (
+    build_report_context,
+    is_replenishment_report_template,
+    is_stock_entry_report_template,
+)
+from .stock_entries import build_stock_entry_context, previous_month_window
 
 
 class InventoryManagerPlugin(
@@ -23,6 +30,7 @@ class InventoryManagerPlugin(
     ReportMixin,
     SettingsMixin,
     ScheduleMixin,
+    AppMixin,
     UrlsMixin,
     UserInterfaceMixin,
     InvenTreePlugin,
@@ -33,9 +41,10 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.3.1"
+    VERSION = "0.5.0"
     AUTHOR = "Matt Dick"
-    MIN_VERSION = "1.0.0"
+    MIN_VERSION = "1.3.2"
+    MAX_VERSION = "1.3.99"
     LICENSE = "MIT"
 
     MOBILE_APP_FEATURES = (
@@ -89,6 +98,32 @@ class InventoryManagerPlugin(
             "default": 7,
             "validator": int,
             "units": "days",
+        },
+        "MONTHLY_STOCK_REPORT_ENABLED": {
+            "name": "Monthly stock-entry report",
+            "description": "Email the prior calendar month's inventory inflows once per month",
+            "default": False,
+            "validator": bool,
+        },
+        "STOCK_ENTRY_EMAIL_RECIPIENT": {
+            "name": "Stock-entry report recipient",
+            "description": (
+                "Email address for stock-entry reports; blank uses the replenishment recipient"
+            ),
+            "default": "",
+            "validator": str,
+        },
+        "STOCK_ENTRY_EMAIL_SUBJECT": {
+            "name": "Stock-entry email subject",
+            "description": "Subject used for monthly inventory-inflow reports",
+            "default": "DiCor Monthly Stock Entry Report",
+            "validator": str,
+        },
+        "STOCK_ENTRY_DELIVERY_DAY": {
+            "name": "Stock-entry delivery day",
+            "description": "Day of the month to deliver the prior calendar month's report",
+            "default": 1,
+            "validator": int,
         },
     }
 
@@ -146,42 +181,101 @@ class InventoryManagerPlugin(
         ).strip()
         return value or DEFAULT_EMAIL_SUBJECT
 
+    def monthly_stock_report_enabled(self) -> bool:
+        value = self._setting("MONTHLY_STOCK_REPORT_ENABLED", False)
+        if isinstance(value, str):
+            return value.strip().casefold() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    def stock_entry_email_subject(self) -> str:
+        return str(
+            self._setting("STOCK_ENTRY_EMAIL_SUBJECT", "DiCor Monthly Stock Entry Report")
+            or "DiCor Monthly Stock Entry Report"
+        ).strip()
+
+    def stock_entry_email_recipient(self) -> str:
+        """Return the independently configurable stock-entry recipient."""
+
+        value = str(self._setting("STOCK_ENTRY_EMAIL_RECIPIENT", "") or "").strip()
+        return value or self.email_recipient()
+
+    def stock_entry_delivery_day(self) -> int:
+        """Return a safe monthly delivery day which exists in every month."""
+
+        try:
+            value = int(self._setting("STOCK_ENTRY_DELIVERY_DAY", 1))
+        except (TypeError, ValueError):
+            value = 1
+        return min(max(value, 1), 28)
+
     def get_scheduled_tasks(self) -> dict[str, dict[str, object]]:
         """Dynamically register one repeating report task when enabled."""
 
-        if not self.automation_enabled() or not self.email_recipient():
-            return {}
-
-        return {
-            "replenishment_report": {
+        tasks = {}
+        if self.automation_enabled() and self.email_recipient():
+            tasks["replenishment_report"] = {
                 "func": "run_scheduled_report",
                 "schedule": "I",
                 "minutes": self.automation_interval_days() * 24 * 60,
                 "repeats": -1,
             }
-        }
+        if self.monthly_stock_report_enabled() and self.stock_entry_email_recipient():
+            tasks["monthly_stock_entry_report"] = {
+                "func": "run_monthly_stock_entry_report",
+                "schedule": "M",
+                "repeats": -1,
+            }
+        return tasks
 
     def refresh_automation_schedule(self) -> None:
         """Apply an automation setting change without requiring a plugin reload."""
 
-        task_name = self.get_task_name("replenishment_report")
-
-        if self.automation_enabled() and self.email_recipient():
-            from datetime import timedelta
-
-            from django.utils import timezone
-            from django_q.models import Schedule
-
-            self.register_tasks()
-            Schedule.objects.filter(name=task_name).update(
-                next_run=timezone.now()
-                + timedelta(days=self.automation_interval_days())
-            )
-            return
+        replenishment_name = self.get_task_name("replenishment_report")
+        monthly_name = self.get_task_name("monthly_stock_entry_report")
 
         from django_q.models import Schedule
 
-        Schedule.objects.filter(name=task_name).delete()
+        if self.get_scheduled_tasks():
+            from datetime import timedelta
+
+            from django.utils import timezone
+
+            self.register_tasks()
+            if self.automation_enabled() and self.email_recipient():
+                Schedule.objects.filter(name=replenishment_name).update(
+                    next_run=timezone.now()
+                    + timedelta(days=self.automation_interval_days())
+                )
+            if (
+                self.monthly_stock_report_enabled()
+                and self.stock_entry_email_recipient()
+            ):
+                now = timezone.localtime()
+                delivery_day = self.stock_entry_delivery_day()
+                next_delivery = now.replace(
+                    day=delivery_day,
+                    hour=7,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                )
+                if next_delivery <= now:
+                    next_delivery = (now.replace(day=28) + timedelta(days=4)).replace(
+                        day=delivery_day,
+                        hour=7,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    )
+                Schedule.objects.filter(name=monthly_name).update(next_run=next_delivery)
+
+        if not self.automation_enabled() or not self.email_recipient():
+            Schedule.objects.filter(name=replenishment_name).delete()
+        if (
+            not self.monthly_stock_report_enabled()
+            or not self.stock_entry_email_recipient()
+        ):
+            Schedule.objects.filter(name=monthly_name).delete()
 
     def send_configured_report_email(self):
         """Generate and email a report using the saved delivery settings."""
@@ -196,6 +290,58 @@ class InventoryManagerPlugin(
 
         if self.automation_enabled() and self.email_recipient():
             self.send_configured_report_email()
+
+    def run_monthly_stock_entry_report(self, force: bool = False):
+        """Generate, email, and retain one idempotent prior-month report."""
+
+        recipient = self.stock_entry_email_recipient()
+        if (not force and not self.monthly_stock_report_enabled()) or not recipient:
+            return None
+
+        from django.utils import timezone
+
+        from .automation import generate_stock_entry_report
+        from .models import StockEntryReportRun
+
+        start, end = previous_month_window(timezone.localdate())
+        run, _ = StockEntryReportRun.objects.get_or_create(
+            period_key=start.strftime("%Y-%m"),
+            defaults={
+                "kind": StockEntryReportRun.Kind.MONTHLY,
+                "period_start": start,
+                "period_end": end,
+                "recipient": recipient,
+            },
+        )
+        if run.status in {
+            StockEntryReportRun.Status.EMAILED,
+            StockEntryReportRun.Status.ACKNOWLEDGED,
+        }:
+            return run
+
+        try:
+            output = generate_stock_entry_report(start, end)
+            run.output_id = output.pk
+            run.status = StockEntryReportRun.Status.GENERATED
+            run.error = ""
+            run.save(update_fields=["output_id", "status", "error"])
+            send_stock_entry_report_email(
+                output,
+                recipient,
+                start,
+                end,
+                self.stock_entry_email_subject(),
+            )
+            run.status = StockEntryReportRun.Status.EMAILED
+            run.sent_at = timezone.now()
+            run.save(update_fields=["status", "sent_at"])
+        except Exception as error:
+            run.status = StockEntryReportRun.Status.FAILED
+            run.error = str(error)
+            run.save(update_fields=["status", "error"])
+            raise
+
+        return run
 
     def setup_urls(self):
         """Expose the simple Inventory Manager control panel."""
@@ -294,6 +440,27 @@ class InventoryManagerPlugin(
         if attention:
             sections.append({"title": "Needs attention", "items": attention})
 
+        try:
+            from .models import StockEntryReportRun
+
+            latest = StockEntryReportRun.objects.first()
+        except Exception:
+            latest = None
+        if latest:
+            sections.append(
+                {
+                    "title": "Stock-entry accounting",
+                    "items": [
+                        {
+                            "label": f"{latest.period_start} to {latest.period_end}",
+                            "value": latest.get_status_display(),
+                            "detail": latest.accounting_reference
+                            or "Open the web Reporting page to record acknowledgement",
+                        }
+                    ],
+                }
+            )
+
         return Response(
             {
                 "schema_version": self.MOBILE_APP_SCHEMA_VERSION,
@@ -351,9 +518,13 @@ class InventoryManagerPlugin(
     ) -> None:
         """Inject replenishment rows and summary totals at report render time."""
 
-        del model_instance, request
+        del model_instance
 
-        if not is_replenishment_report_template(report_instance):
-            return
-
-        context.update(build_report_context(policy=self.get_inventory_policy()))
+        if is_replenishment_report_template(report_instance):
+            context.update(build_report_context(policy=self.get_inventory_policy()))
+        elif is_stock_entry_report_template(report_instance):
+            start = getattr(request, "inventory_manager_period_start", None)
+            end = getattr(request, "inventory_manager_period_end", None)
+            if start is None or end is None:
+                start, end = previous_month_window()
+            context.update(build_stock_entry_context(start, end))

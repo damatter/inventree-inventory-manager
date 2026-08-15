@@ -1,8 +1,13 @@
+import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-import unittest
 
-from inventory_manager.views import _output_error, _output_url, _validate_settings
+from inventory_manager.views import (
+    _output_error,
+    _output_url,
+    _stock_report_window,
+    _validate_settings,
+)
 
 
 class SettingsValidationTests(unittest.TestCase):
@@ -15,6 +20,8 @@ class SettingsValidationTests(unittest.TestCase):
                 "automation_enabled": "on",
                 "email_recipient": " dad@example.com ",
                 "email_subject": "Weekly Stock Report",
+                "stock_entry_email_recipient": " accounts@example.com ",
+                "stock_entry_delivery_day": "12",
             }
         )
 
@@ -25,6 +32,10 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(values["AUTOMATION_INTERVAL_DAYS"], 7)
         self.assertEqual(values["EMAIL_RECIPIENT"], "dad@example.com")
         self.assertEqual(values["EMAIL_SUBJECT"], "Weekly Stock Report")
+        self.assertEqual(
+            values["STOCK_ENTRY_EMAIL_RECIPIENT"], "accounts@example.com"
+        )
+        self.assertEqual(values["STOCK_ENTRY_DELIVERY_DAY"], 12)
 
     def test_invalid_values_return_safe_defaults(self) -> None:
         values, errors = _validate_settings(
@@ -54,11 +65,29 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(
             errors,
             [
-                "Enter a recipient email address before enabling automatic delivery."
+                "Enter a replenishment recipient before enabling its automatic delivery."
             ],
         )
         self.assertEqual(values["EMAIL_RECIPIENT"], "")
         self.assertTrue(values["AUTOMATION_ENABLED"])
+
+    def test_stock_entry_delivery_requires_recipient_and_valid_day(self) -> None:
+        values, errors = _validate_settings(
+            {
+                "default_minimum_stock": "2",
+                "low_buffer_multiplier": "2",
+                "automation_interval_days": "7",
+                "stock_entry_delivery_day": "31",
+                "monthly_stock_report_enabled": "on",
+            }
+        )
+
+        self.assertEqual(values["STOCK_ENTRY_DELIVERY_DAY"], 1)
+        self.assertIn("Stock-entry delivery day must be between 1 and 28.", errors)
+        self.assertIn(
+            "Enter a stock-entry recipient before enabling its automatic delivery.",
+            errors,
+        )
 
     def test_invalid_recipient_is_rejected(self) -> None:
         values, errors = _validate_settings(
@@ -86,6 +115,26 @@ class OutputUrlTests(unittest.TestCase):
         )
 
         self.assertEqual(_output_url(output), "https://files.example/report.pdf")
+
+
+class StockReportWindowTests(unittest.TestCase):
+    def test_valid_inclusive_window(self) -> None:
+        start, end, error = _stock_report_window(
+            {"period_start": "2026-07-01", "period_end": "2026-07-31"}
+        )
+
+        self.assertEqual(str(start), "2026-07-01")
+        self.assertEqual(str(end), "2026-07-31")
+        self.assertEqual(error, "")
+
+    def test_reversed_window_is_rejected(self) -> None:
+        start, end, error = _stock_report_window(
+            {"period_start": "2026-08-01", "period_end": "2026-07-31"}
+        )
+
+        self.assertIsNone(start)
+        self.assertIsNone(end)
+        self.assertIn("must not be after", error)
 
 
 class OutputErrorTests(unittest.TestCase):

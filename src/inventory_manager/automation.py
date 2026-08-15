@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from .reports import REPORT_DESCRIPTION_MARKER, REPORT_NAME
+from .reports import (
+    REPORT_DESCRIPTION_MARKER,
+    REPORT_NAME,
+    STOCK_ENTRY_DESCRIPTION_MARKER,
+    STOCK_ENTRY_REPORT_NAME,
+)
 
 PLUGIN_SLUG = "inventory-manager"
 
@@ -31,6 +36,22 @@ def find_replenishment_template():
             "No enabled Inventory Replenishment Report template was found."
         )
 
+    return template
+
+
+def find_stock_entry_template():
+    """Return the enabled stock-entry report template configured for this plugin."""
+
+    from report.models import ReportTemplate
+
+    templates = ReportTemplate.objects.filter(enabled=True)
+    template = templates.filter(name__iexact=STOCK_ENTRY_REPORT_NAME).first()
+    if template is None:
+        template = templates.filter(
+            description__icontains=STOCK_ENTRY_DESCRIPTION_MARKER
+        ).first()
+    if template is None:
+        raise ReportSetupError("No enabled Monthly Stock Entry Report template was found.")
     return template
 
 
@@ -111,4 +132,21 @@ def generate_replenishment_report():
     if output is None:
         raise ReportSetupError("The scheduled report did not produce an output.")
 
+    return _tag_output(output)
+
+
+def generate_stock_entry_report(start, end, request=None):
+    """Synchronously generate a stock-entry PDF for an explicit date window."""
+
+    template = find_stock_entry_template()
+    anchor = report_anchor(template)
+    _check_report_permission(getattr(request, "user", None), template)
+
+    if request is not None:
+        request.inventory_manager_period_start = start
+        request.inventory_manager_period_end = end
+
+    output = template.print([anchor], request=request)
+    if output is None:
+        raise ReportSetupError("The stock-entry report did not produce an output.")
     return _tag_output(output)

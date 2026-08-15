@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inventree-inventory-manager"
-version = "0.3.1"
+version = "0.5.0"
 description = "Stock-level reporting and replenishment planning for InvenTree"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,6 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.optional-dependencies]
