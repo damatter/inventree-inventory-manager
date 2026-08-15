@@ -10,7 +10,9 @@ template. It provides:
 - a configurable replenishment target;
 - a simple screen for settings and one-click PDF generation; and
 - optional scheduled PDF delivery by email through InvenTree's background
-  worker.
+  worker; and
+- an authenticated native dashboard for compatible versions of the InvenTree
+  mobile app, without passing the user's API token to a browser.
 
 ## Stock rules
 
@@ -70,6 +72,11 @@ The large report button is available to authenticated users. Administrators
 can also change the default minimum, low-buffer multiplier, automation toggle,
 and automatic report interval. Automatic reports are retained in the Recent
 Reports list on the same screen.
+
+Plugin settings and generated report records use InvenTree's own database
+models, so the normal `invoke backup`, `invoke restore`, and `invoke update`
+workflows include them. Install the same plugin version before restoring an
+InvenTree database onto another server.
 
 ## Automatic email reporting
 

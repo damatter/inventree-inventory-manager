@@ -1,7 +1,7 @@
 import importlib
 import sys
-from types import ModuleType, SimpleNamespace
 import unittest
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
@@ -62,7 +62,7 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
-        self.assertEqual(plugin_class.VERSION, "0.3.0")
+        self.assertEqual(plugin_class.VERSION, "0.3.1")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -137,14 +137,64 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(action["title"], "Reporting")
         self.assertEqual(
             action["source"],
-            "/plugin/inventory-manager/reporting.js:openReporting?v=0.3.0",
+            "/plugin/inventory-manager/reporting.js:openReporting?v=0.3.1",
         )
         self.assertEqual(dashboard["title"], "Reporting")
-        self.assertEqual(dashboard["options"], {"width": 3, "height": 2})
+        self.assertEqual(
+            dashboard["options"],
+            {
+                "width": 3,
+                "height": 2,
+                "mobile": {
+                    "schema_version": 1,
+                    "renderer": "summary-list-v1",
+                    "endpoint": "/plugin/inventory-manager/mobile/dashboard/",
+                },
+            },
+        )
         self.assertEqual(
             dashboard["source"],
-            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.3.0",
+            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.3.1",
         )
+
+    def test_mobile_dashboard_returns_versioned_summary(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        response_module = ModuleType("rest_framework.response")
+
+        class Response:
+            def __init__(self, data):
+                self.data = data
+
+        response_module.Response = Response
+        report_context = {
+            "inventory_summary": {
+                "critical_count": 1,
+                "reorder_count": 2,
+                "low_buffer_count": 3,
+                "healthy_count": 4,
+                "review_count": 6,
+                "parts_evaluated": 10,
+            },
+            "replenishment_items": [
+                {
+                    "part_id": 42,
+                    "part_name": "Widget",
+                    "available": 1,
+                    "suggested_order": 5,
+                    "status": "reorder",
+                }
+            ],
+        }
+
+        with (
+            patch.dict(sys.modules, {"rest_framework.response": response_module}),
+            patch.object(module, "build_report_context", return_value=report_context),
+        ):
+            response = plugin.mobile_dashboard_view(object())
+
+        self.assertEqual(response.data["schema_version"], 1)
+        self.assertEqual(response.data["sections"][1]["items"][0]["action"]["pk"], 42)
 
     def test_email_schedule_requires_enabled_automation_and_recipient(self) -> None:
         module = import_plugin_module()

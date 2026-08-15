@@ -14,10 +14,12 @@ from .emailing import (
     generate_and_email_replenishment_report,
 )
 from .inventory import InventoryPolicy
+from .mobile import MobileAppMixin
 from .reports import build_report_context, is_replenishment_report_template
 
 
 class InventoryManagerPlugin(
+    MobileAppMixin,
     ReportMixin,
     SettingsMixin,
     ScheduleMixin,
@@ -31,10 +33,20 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.3.0"
+    VERSION = "0.3.1"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.0.0"
     LICENSE = "MIT"
+
+    MOBILE_APP_FEATURES = (
+        {
+            "feature_type": "dashboard",
+            "key": "reporting-shortcut",
+            "title": "Reporting",
+            "renderer": "summary-list-v1",
+            "endpoint": "/plugin/inventory-manager/mobile/dashboard/",
+        },
+    )
 
     SETTINGS = {
         "DEFAULT_MINIMUM_STOCK": {
@@ -189,14 +201,31 @@ class InventoryManagerPlugin(
         """Expose the simple Inventory Manager control panel."""
 
         from django.urls import path
-
         from InvenTree.permissions import auth_exempt
+
+        def authenticated_mobile_dashboard(request, *args, **kwargs):
+            """Apply DRF token authentication without importing it at startup."""
+
+            from rest_framework.decorators import api_view, permission_classes
+            from rest_framework.permissions import IsAuthenticated
+
+            @api_view(["GET"])
+            @permission_classes([IsAuthenticated])
+            def view(api_request):
+                return self.mobile_dashboard_view(api_request)
+
+            return view(request, *args, **kwargs)
 
         return [
             path(
                 "reporting.js",
                 auth_exempt(self.reporting_script_view),
                 name="reporting-script",
+            ),
+            path(
+                "mobile/dashboard/",
+                authenticated_mobile_dashboard,
+                name="mobile-dashboard",
             ),
             path("", self.control_panel_view, name="control-panel"),
             path(
@@ -226,6 +255,53 @@ class InventoryManagerPlugin(
         from .views import reporting_script
 
         return reporting_script(request)
+
+    def mobile_dashboard_view(self, request):
+        """Return a native, token-authenticated replenishment summary."""
+
+        del request
+
+        from rest_framework.response import Response
+
+        context = build_report_context(policy=self.get_inventory_policy())
+        summary = context["inventory_summary"]
+        rows = context["replenishment_items"][:8]
+
+        overview = [
+            {"label": "Critical", "value": str(summary["critical_count"])},
+            {"label": "Reorder", "value": str(summary["reorder_count"])},
+            {"label": "Low buffer", "value": str(summary["low_buffer_count"])},
+            {"label": "Parts evaluated", "value": str(summary["parts_evaluated"])},
+        ]
+        attention = [
+            {
+                "label": str(row["part_name"]),
+                "value": str(row["status"]).replace("_", " ").title(),
+                "detail": (
+                    f"Available {row['available']} | "
+                    f"Suggested order {row['suggested_order']}"
+                ),
+                "action": {
+                    "type": "model_detail",
+                    "model": "part",
+                    "pk": row["part_id"],
+                },
+            }
+            for row in rows
+        ]
+
+        sections = [{"title": "Stock overview", "items": overview}]
+        if attention:
+            sections.append({"title": "Needs attention", "items": attention})
+
+        return Response(
+            {
+                "schema_version": self.MOBILE_APP_SCHEMA_VERSION,
+                "title": "Reporting",
+                "description": "Stock health and replenishment planning",
+                "sections": sections,
+            }
+        )
 
     def get_ui_navigation_items(self, request, context, **kwargs):
         """Avoid InvenTree's SPA-only navigation tabs for this server page."""
@@ -259,7 +335,14 @@ class InventoryManagerPlugin(
                 "source": (
                     f"{self.control_panel_url}reporting.js:renderReportingShortcut?v={self.VERSION}"
                 ),
-                "options": {"width": 3, "height": 2},
+                "options": {
+                    "width": 3,
+                    "height": 2,
+                    **self.mobile_app_options(
+                        "summary-list-v1",
+                        "/plugin/inventory-manager/mobile/dashboard/",
+                    ),
+                },
             }
         ]
 
