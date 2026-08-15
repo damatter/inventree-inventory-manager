@@ -29,6 +29,24 @@ template. It provides:
 InvenTree's built-in `IN_STOCK_FILTER`, grouped by their exact part. Stock held
 against a parent template's variants is not counted twice.
 
+## Install or update in InvenTree
+
+Use this pinned source URL in the plugin installer:
+
+```text
+git+https://github.com/damatter/inventree-inventory-manager.git@0.5.0
+```
+
+The equivalent `plugins.txt` entry is:
+
+```text
+inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.5.0
+```
+
+Leave the separate version field blank because the Git tag pins the release.
+After installation, run the normal `invoke update` workflow and restart the
+InvenTree server and worker containers. No force recreation is required.
+
 ## Development
 
 The pure calculation code has no InvenTree dependency, so its tests can run in
