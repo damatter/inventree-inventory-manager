@@ -32,6 +32,13 @@ class EmailingTests(unittest.TestCase):
             ):
                 emailing.normalize_recipient(value)
 
+        self.assertEqual(
+            emailing.normalize_recipient(
+                "dad@example.com; accounts@example.com, DAD@example.com"
+            ),
+            "dad@example.com, accounts@example.com",
+        )
+
     def test_generated_pdf_is_attached_and_sent(self) -> None:
         report_file = FakeReportFile(b"%PDF-test")
         output = SimpleNamespace(output=report_file, complete=True, errors=None)
@@ -60,8 +67,9 @@ class EmailingTests(unittest.TestCase):
         ):
             sent = emailing.send_replenishment_report_email(
                 output,
-                "dad@example.com",
+                "dad@example.com, accounts@example.com",
                 "Weekly Stock Report",
+                b"Part,Quantity\r\nWidget,4\r\n",
             )
 
         self.assertEqual(sent, 1)
@@ -74,11 +82,14 @@ class EmailingTests(unittest.TestCase):
                 "INTERNAL - DiCor Engineering"
             ),
             from_email="inventree@example.com",
-            to=["dad@example.com"],
+            to=["dad@example.com", "accounts@example.com"],
         )
-        attachment = message.attach.call_args.args
-        self.assertTrue(attachment[0].startswith("inventory-replenishment-"))
-        self.assertEqual(attachment[1:], (b"%PDF-test", "application/pdf"))
+        pdf_attachment = message.attach.call_args_list[0].args
+        csv_attachment = message.attach.call_args_list[1].args
+        self.assertTrue(pdf_attachment[0].startswith("inventory-replenishment-"))
+        self.assertEqual(pdf_attachment[1:], (b"%PDF-test", "application/pdf"))
+        self.assertTrue(csv_attachment[0].endswith(".csv"))
+        self.assertEqual(csv_attachment[2], "text/csv")
         message.send.assert_called_once_with(fail_silently=False)
 
     def test_manual_delivery_is_queued_on_inventree_worker(self) -> None:
@@ -202,6 +213,7 @@ class EmailingTests(unittest.TestCase):
             output,
             "dad@example.com",
             emailing.DEFAULT_EMAIL_SUBJECT,
+            None,
         )
 
 

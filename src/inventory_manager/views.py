@@ -11,13 +11,17 @@ from .automation import (
     generate_stock_entry_report,
     queue_replenishment_report,
 )
+from .csv_exports import replenishment_csv, stock_entry_csv
 from .emailing import (
     DEFAULT_EMAIL_SUBJECT,
     ReportEmailError,
     email_delivery_available,
     normalize_recipient,
     queue_replenishment_report_email,
+    queue_stock_entry_test_email,
 )
+from .reports import build_report_context
+from .stock_entries import build_stock_entry_context
 
 
 def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
@@ -50,15 +54,19 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
         interval = 7
 
     try:
-        stock_entry_delivery_day = int(post_data.get("stock_entry_delivery_day", "1"))
-        if not 1 <= stock_entry_delivery_day <= 28:
+        stock_entry_interval = int(
+            post_data.get("stock_entry_automation_interval_days", "30")
+        )
+        if not 1 <= stock_entry_interval <= 365:
             raise ValueError
     except (TypeError, ValueError):
-        errors.append("Stock-entry delivery day must be between 1 and 28.")
-        stock_entry_delivery_day = 1
+        errors.append("Stock-entry report interval must be between 1 and 365 days.")
+        stock_entry_interval = 30
 
     automation_enabled = post_data.get("automation_enabled") == "on"
-    monthly_stock_report_enabled = post_data.get("monthly_stock_report_enabled") == "on"
+    stock_entry_automation_enabled = (
+        post_data.get("stock_entry_automation_enabled") == "on"
+    )
     email_recipient = str(post_data.get("email_recipient", "") or "").strip()
     stock_entry_email_recipient = str(
         post_data.get("stock_entry_email_recipient", "") or ""
@@ -69,7 +77,7 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
     )
     stock_entry_email_subject = (
         str(post_data.get("stock_entry_email_subject", "") or "").strip()
-        or "DiCor Monthly Stock Entry Report"
+        or "DiCor Stock Entry Report"
     )
 
     if email_recipient:
@@ -89,7 +97,7 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
             )
         except ReportEmailError as error:
             errors.append(str(error))
-    elif monthly_stock_report_enabled and not email_recipient:
+    elif stock_entry_automation_enabled and not email_recipient:
         errors.append(
             "Enter a stock-entry recipient before enabling its automatic delivery."
         )
@@ -102,10 +110,10 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
             "EMAIL_SUBJECT": email_subject,
             "AUTOMATION_ENABLED": automation_enabled,
             "AUTOMATION_INTERVAL_DAYS": interval,
-            "MONTHLY_STOCK_REPORT_ENABLED": monthly_stock_report_enabled,
+            "MONTHLY_STOCK_REPORT_ENABLED": stock_entry_automation_enabled,
             "STOCK_ENTRY_EMAIL_RECIPIENT": stock_entry_email_recipient,
             "STOCK_ENTRY_EMAIL_SUBJECT": stock_entry_email_subject,
-            "STOCK_ENTRY_DELIVERY_DAY": stock_entry_delivery_day,
+            "STOCK_ENTRY_AUTOMATION_INTERVAL_DAYS": stock_entry_interval,
         },
         errors,
     )
@@ -139,6 +147,27 @@ def _schedule_integration_enabled() -> bool:
     if isinstance(value, str):
         return value.strip().casefold() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _csv_response(content: bytes, filename: str):
+    """Return one browser-downloadable UTF-8 CSV file."""
+
+    from django.http import HttpResponse
+
+    response = HttpResponse(content, content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _next_email_label(enabled: bool, days: int | None) -> str:
+    if not enabled:
+        return "Automatic delivery off"
+    if days is None:
+        return "Schedule pending"
+    if days == 0:
+        return "Email due today"
+    suffix = "day" if days == 1 else "days"
+    return f"Next email in {days} {suffix}"
 
 
 def _rooted_url(url: str) -> str:
@@ -249,22 +278,17 @@ def control_panel(request, plugin):
                     raise PermissionDenied(
                         "Only an InvenTree administrator can send report emails."
                     )
+                recipient = plugin.stock_entry_email_recipient()
                 try:
-                    run = plugin.run_monthly_stock_entry_report(force=True)
-                except Exception as error:
-                    messages.error(request, f"Stock-entry report delivery failed: {error}")
+                    queue_stock_entry_test_email(plugin.SLUG, recipient)
+                except ReportEmailError as error:
+                    messages.error(request, str(error))
                 else:
-                    if run is None:
-                        messages.error(request, "Enter and save a report recipient first.")
-                    else:
-                        messages.success(
-                            request,
-                            (
-                                f"Stock-entry report for {run.period_start:%B %Y} is "
-                                f"{run.get_status_display().lower()}."
-                            ),
-                        )
-                        return redirect(plugin.control_panel_url)
+                    messages.success(
+                        request,
+                        f"Stock-entry test email queued for {recipient}.",
+                    )
+                    return redirect(plugin.control_panel_url)
 
             elif action == "generate-report":
                 try:
@@ -274,6 +298,13 @@ def control_panel(request, plugin):
                 else:
                     status_url = f"{plugin.control_panel_url}report/{output.pk}/"
                     return redirect(status_url)
+
+            elif action == "generate-report-csv":
+                context = build_report_context(policy=plugin.get_inventory_policy())
+                return _csv_response(
+                    replenishment_csv(context),
+                    f"inventory-replenishment-{date.today().isoformat()}.csv",
+                )
 
             elif action == "generate-stock-entry-report":
                 start, end, error = _stock_report_window(request.POST)
@@ -298,6 +329,17 @@ def control_panel(request, plugin):
                         return redirect(
                             f"{plugin.control_panel_url}report/{output.pk}/"
                         )
+
+            elif action == "generate-stock-entry-csv":
+                start, end, error = _stock_report_window(request.POST)
+                if error:
+                    messages.error(request, error)
+                else:
+                    context = build_stock_entry_context(start, end)
+                    return _csv_response(
+                        stock_entry_csv(context),
+                        f"stock-entries-{start.isoformat()}-to-{end.isoformat()}.csv",
+                    )
 
             elif action == "acknowledge-stock-report":
                 from django.shortcuts import get_object_or_404
@@ -383,6 +425,21 @@ def control_panel(request, plugin):
         ).exclude(status=StockEntryReportRun.Status.FAILED).count()
         default_start, default_end = previous_month_window(timezone.localdate())
 
+        try:
+            replenishment_days_until_next_email = (
+                plugin.days_until_next_email("replenishment_report")
+                if plugin.automation_enabled()
+                else None
+            )
+            stock_entry_days_until_next_email = (
+                plugin.days_until_next_email("monthly_stock_entry_report")
+                if plugin.monthly_stock_report_enabled()
+                else None
+            )
+        except Exception:
+            replenishment_days_until_next_email = None
+            stock_entry_days_until_next_email = None
+
         context = {
             "plugin_title": plugin.TITLE,
             "plugin_version": plugin.VERSION,
@@ -396,7 +453,20 @@ def control_panel(request, plugin):
             "monthly_stock_report_enabled": plugin.monthly_stock_report_enabled(),
             "stock_entry_email_recipient": plugin.stock_entry_email_recipient(),
             "stock_entry_email_subject": plugin.stock_entry_email_subject(),
-            "stock_entry_delivery_day": plugin.stock_entry_delivery_day(),
+            "stock_entry_automation_interval_days": (
+                plugin.stock_entry_automation_interval_days()
+            ),
+            "replenishment_days_until_next_email": (
+                replenishment_days_until_next_email
+            ),
+            "stock_entry_days_until_next_email": stock_entry_days_until_next_email,
+            "replenishment_schedule_status": _next_email_label(
+                plugin.automation_enabled(), replenishment_days_until_next_email
+            ),
+            "stock_entry_schedule_status": _next_email_label(
+                plugin.monthly_stock_report_enabled(),
+                stock_entry_days_until_next_email,
+            ),
             "email_configured": email_delivery_available(),
             "schedule_integration_enabled": _schedule_integration_enabled(),
             "latest_outputs": latest_outputs,
@@ -432,14 +502,7 @@ def report_status(request, plugin, output_id: int):
 
         if output.complete:
             if url := _output_url(output):
-                return render(
-                    request,
-                    "inventory_manager/report_complete.html",
-                    {
-                        "download_url": url,
-                        "control_panel_url": plugin.control_panel_url,
-                    },
-                )
+                return redirect(url)
             messages.error(request, "The report completed without a downloadable file.")
             return redirect(plugin.control_panel_url)
 

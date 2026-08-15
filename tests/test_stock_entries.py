@@ -7,6 +7,7 @@ from inventory_manager.stock_entries import (
     STOCK_ADD,
     StockEntry,
     previous_month_window,
+    scheduled_stock_entry_window,
     summarize_stock_entries,
     tracking_quantity,
 )
@@ -17,6 +18,12 @@ class StockEntryTests(unittest.TestCase):
         self.assertEqual(
             previous_month_window(date(2026, 1, 15)),
             (date(2025, 12, 1), date(2025, 12, 31)),
+        )
+
+    def test_scheduled_window_is_inclusive_and_ends_yesterday(self) -> None:
+        self.assertEqual(
+            scheduled_stock_entry_window(date(2026, 8, 15), 30),
+            (date(2026, 7, 16), date(2026, 8, 14)),
         )
 
     def test_manual_add_uses_delta_not_resulting_balance(self) -> None:

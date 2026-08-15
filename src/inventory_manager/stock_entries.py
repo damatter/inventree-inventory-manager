@@ -37,6 +37,17 @@ def previous_month_window(today: date | None = None) -> tuple[date, date]:
     return last_previous_month.replace(day=1), last_previous_month
 
 
+def scheduled_stock_entry_window(
+    today: date | None = None, interval_days: int = 30
+) -> tuple[date, date]:
+    """Return the most recent complete interval, ending yesterday."""
+
+    current = today or date.today()
+    days = min(max(int(interval_days), 1), 365)
+    end = current - timedelta(days=1)
+    return end - timedelta(days=days - 1), end
+
+
 def tracking_quantity(tracking_type: int, deltas: object) -> Decimal:
     """Extract the quantity that entered inventory for one history event."""
 
@@ -158,7 +169,7 @@ def build_stock_entry_context(
     end: date,
     entries: Iterable[StockEntry] | None = None,
 ) -> dict[str, object]:
-    """Build the context used by the monthly and manual stock-entry PDF."""
+    """Build the context used by scheduled and manual stock-entry exports."""
 
     rows = list(stock_entries_from_inventree(start, end) if entries is None else entries)
     return {

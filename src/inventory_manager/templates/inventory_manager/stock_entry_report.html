@@ -7,17 +7,17 @@
 {% block style %}
 .stock-entry-report, .stock-entry-report * { box-sizing: border-box; }
 .stock-entry-report { width: 100%; margin: 0 auto; color: #263746; }
-.report-heading { margin: 0 auto 18px; text-align: center; }
-.report-title { margin: 0 0 5px; font-size: 28px; }
-.period { margin: 0; color: #5f6b73; }
+.report-heading { width: 100%; margin: 0 auto 18px; text-align: center !important; }
+.report-title { width: 100%; margin: 0 0 5px; font-size: 29px; text-align: center !important; }
+.period { width: 100%; margin: 0; color: #5f6b73; font-size: 14px; text-align: center !important; }
 .summary { width: 78%; margin: 0 auto 18px; border-collapse: collapse; }
-.summary td { padding: 10px; border: 1px solid #cbd2d8; }
+.summary td { padding: 10px; border: 1px solid #cbd2d8; font-size: 12px; }
 .summary .value { font-size: 18px; font-weight: bold; text-align: right; }
 .entries { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .entries thead { display: table-header-group; }
 .entries tr { page-break-inside: avoid; }
-.entries th { padding: 7px 5px; border: 1px solid #263746; background: #344b5e; color: white; font-size: 11px; text-align: left; }
-.entries td { padding: 6px 5px; border: 1px solid #cbd2d8; font-size: 10px; overflow-wrap: anywhere; vertical-align: top; }
+.entries th { padding: 7px 5px; border: 1px solid #263746; background: #344b5e; color: white; font-size: 12px; text-align: left; }
+.entries td { padding: 6px 5px; border: 1px solid #cbd2d8; font-size: 11px; overflow-wrap: anywhere; vertical-align: top; }
 .date { width: 13%; }
 .part { width: 20%; font-weight: bold; }
 .source { width: 18%; }
@@ -25,10 +25,10 @@
 .money { width: 13%; text-align: right; }
 .location { width: 14%; }
 .user { width: 12%; }
-.notice { margin-top: 12px; padding: 10px; background: #f6f1df; color: #655419; font-size: 10px; }
+.notice { margin-top: 12px; padding: 10px; background: #f6f1df; color: #655419; font-size: 11px; }
 .empty { padding: 24px; border: 2px solid #79a981; background: #edf7ef; text-align: center; }
 
-{% block top_center %}content: "Monthly Stock Entry Report";{% endblock top_center %}
+{% block top_center %}content: "Stock Entry Report";{% endblock top_center %}
 {% block bottom_left %}content: "{{ stock_entry_period_start }} to {{ stock_entry_period_end }}";{% endblock bottom_left %}
 {% block bottom_center %}content: "INTERNAL - DiCor Engineering";{% endblock bottom_center %}
 {% endblock style %}
@@ -36,9 +36,9 @@
 {% block pre_page_content %}{% endblock pre_page_content %}
 {% block page_content %}
 <div class="stock-entry-report">
-    <div class="report-heading">
-        <h1 class="report-title">Stock Entered</h1>
-        <p class="period">{{ stock_entry_period_start }} through {{ stock_entry_period_end }}</p>
+    <div class="report-heading" style="width:100%; text-align:center !important;">
+        <h1 class="report-title" style="width:100%; text-align:center !important;">Stock Entered</h1>
+        <p class="period" style="width:100%; text-align:center !important;">{{ stock_entry_period_start }} through {{ stock_entry_period_end }}</p>
     </div>
 
     <table class="summary">

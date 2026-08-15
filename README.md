@@ -9,9 +9,9 @@ template. It provides:
 - healthy parts omitted from the actionable report;
 - a configurable replenishment target;
 - a responsive reporting dashboard with separate replenishment and stock-entry workflows;
-- optional scheduled PDF delivery by email through InvenTree's background
-  worker; and
-- manual date-window and automatic prior-calendar-month stock-entry reports;
+- optional scheduled PDF and CSV delivery to multiple email recipients through
+  InvenTree's background worker;
+- manual date-window and repeating-interval stock-entry reports;
 - a durable accounting register with report delivery and acknowledgement records; and
 - an authenticated native dashboard for compatible versions of the InvenTree
   mobile app, without passing the user's API token to a browser.
@@ -34,13 +34,13 @@ against a parent template's variants is not counted twice.
 Use this pinned source URL in the plugin installer:
 
 ```text
-git+https://github.com/damatter/inventree-inventory-manager.git@0.5.0
+git+https://github.com/damatter/inventree-inventory-manager.git@0.6.0
 ```
 
 The equivalent `plugins.txt` entry is:
 
 ```text
-inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.5.0
+inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.6.0
 ```
 
 Leave the separate version field blank because the Git tag pins the release.
@@ -63,7 +63,7 @@ python -m pip install --editable .
 ```
 
 The package exposes `InventoryManagerPlugin` through the required
-`inventree_plugins` entry-point group. Version 0.5.0 targets InvenTree 1.3.x;
+`inventree_plugins` entry-point group. Version 0.6.0 targets InvenTree 1.3.x;
 the stock-history contract should be reviewed before enabling it on a future
 InvenTree 1.4 release.
 
@@ -105,7 +105,7 @@ directly at `/plugin/inventory-manager/`.
 
 Both report workflows are available to authenticated users. Administrators can
 also change the replenishment policy and delivery interval, plus the independent
-stock-entry recipient, subject, enabled state, and monthly delivery day.
+stock-entry recipients, subject, enabled state, and delivery interval.
 Automatic reports are retained in the Recent Reports list on the same screen.
 
 Plugin settings and generated report records use InvenTree's own database
@@ -113,8 +113,9 @@ models, so the normal `invoke backup`, `invoke restore`, and `invoke update`
 workflows include them. Install the same plugin version before restoring an
 InvenTree database onto another server.
 
-Version 0.4.0 added the `StockEntryReportRun` plugin table. Version 0.5.0 adds
-settings only and does not alter that table. Install the current plugin before
+Version 0.4.0 added the `StockEntryReportRun` plugin table. Version 0.6.0 adds a
+normal database migration which expands the period key and recipient fields for
+interval reports and multiple recipients. Install the current plugin before
 running `invoke update`; existing run history is retained. Each run stores its
 period, PDF job, recipient, delivery state, error, and optional accounting
 acknowledgement.
@@ -124,11 +125,11 @@ acknowledgement.
 Before using email delivery, configure and verify InvenTree's outgoing email
 settings. Then open the **Reporting** screen and:
 
-1. Enter one recipient email address and, optionally, customize the email
-   subject.
+1. Enter one or more comma-separated recipient email addresses and, optionally,
+   customize the email subject.
 2. Save the settings.
-3. Select **Send Test Report Now** and confirm that the PDF arrives as an email
-   attachment.
+3. Select **Send test email** and confirm that the PDF and CSV arrive as email
+   attachments.
 4. Enable automatic reporting, choose the interval in days, and save the
    settings again.
 
@@ -137,9 +138,10 @@ Reports, and emails it to the saved recipient as an attachment. The first run
 is scheduled when the automation settings are saved; later runs repeat at the
 configured interval.
 
-Monthly stock-entry delivery has its own recipient, subject, toggle, and delivery
-day from 1 through 28. It always covers the complete prior calendar month, and
-its period key prevents a successful month from being sent twice. After the
+Stock-entry delivery has its own recipients, subject, toggle, and interval in
+days. Each scheduled report covers the complete period since the last successful
+delivery, and its period key prevents a successful interval from being sent
+twice. After the
 recipient enters the totals in the accounting system, they return to Reporting
 and use **Mark Recorded** with an accounting reference or note. Unacknowledged
 periods stay visible in the register.

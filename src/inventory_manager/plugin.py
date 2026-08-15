@@ -1,5 +1,7 @@
 """InvenTree plugin entry point."""
 
+from datetime import timedelta
+
 from plugin import InvenTreePlugin
 from plugin.mixins import (
     AppMixin,
@@ -10,6 +12,7 @@ from plugin.mixins import (
     UserInterfaceMixin,
 )
 
+from .csv_exports import replenishment_csv, stock_entry_csv
 from .emailing import (
     DEFAULT_EMAIL_SUBJECT,
     generate_and_email_replenishment_report,
@@ -22,7 +25,11 @@ from .reports import (
     is_replenishment_report_template,
     is_stock_entry_report_template,
 )
-from .stock_entries import build_stock_entry_context, previous_month_window
+from .stock_entries import (
+    build_stock_entry_context,
+    previous_month_window,
+    scheduled_stock_entry_window,
+)
 
 
 class InventoryManagerPlugin(
@@ -41,7 +48,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.5.0"
+    VERSION = "0.6.0"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.3.2"
     MAX_VERSION = "1.3.99"
@@ -75,8 +82,8 @@ class InventoryManagerPlugin(
             "validator": float,
         },
         "EMAIL_RECIPIENT": {
-            "name": "Report recipient",
-            "description": "Email address that receives automatic reports",
+            "name": "Report recipients",
+            "description": "Comma-separated email addresses that receive reports",
             "default": "",
             "validator": str,
         },
@@ -100,30 +107,31 @@ class InventoryManagerPlugin(
             "units": "days",
         },
         "MONTHLY_STOCK_REPORT_ENABLED": {
-            "name": "Monthly stock-entry report",
-            "description": "Email the prior calendar month's inventory inflows once per month",
+            "name": "Automatic stock-entry reports",
+            "description": "Email inventory inflows on a repeating interval",
             "default": False,
             "validator": bool,
         },
         "STOCK_ENTRY_EMAIL_RECIPIENT": {
-            "name": "Stock-entry report recipient",
+            "name": "Stock-entry report recipients",
             "description": (
-                "Email address for stock-entry reports; blank uses the replenishment recipient"
+                "Comma-separated addresses; blank uses the replenishment recipients"
             ),
             "default": "",
             "validator": str,
         },
         "STOCK_ENTRY_EMAIL_SUBJECT": {
             "name": "Stock-entry email subject",
-            "description": "Subject used for monthly inventory-inflow reports",
-            "default": "DiCor Monthly Stock Entry Report",
+            "description": "Subject used for inventory-inflow reports",
+            "default": "DiCor Stock Entry Report",
             "validator": str,
         },
-        "STOCK_ENTRY_DELIVERY_DAY": {
-            "name": "Stock-entry delivery day",
-            "description": "Day of the month to deliver the prior calendar month's report",
-            "default": 1,
+        "STOCK_ENTRY_AUTOMATION_INTERVAL_DAYS": {
+            "name": "Stock-entry report interval",
+            "description": "Number of days between automatic stock-entry reports",
+            "default": 30,
             "validator": int,
+            "units": "days",
         },
     }
 
@@ -189,8 +197,8 @@ class InventoryManagerPlugin(
 
     def stock_entry_email_subject(self) -> str:
         return str(
-            self._setting("STOCK_ENTRY_EMAIL_SUBJECT", "DiCor Monthly Stock Entry Report")
-            or "DiCor Monthly Stock Entry Report"
+            self._setting("STOCK_ENTRY_EMAIL_SUBJECT", "DiCor Stock Entry Report")
+            or "DiCor Stock Entry Report"
         ).strip()
 
     def stock_entry_email_recipient(self) -> str:
@@ -199,14 +207,14 @@ class InventoryManagerPlugin(
         value = str(self._setting("STOCK_ENTRY_EMAIL_RECIPIENT", "") or "").strip()
         return value or self.email_recipient()
 
-    def stock_entry_delivery_day(self) -> int:
-        """Return a safe monthly delivery day which exists in every month."""
+    def stock_entry_automation_interval_days(self) -> int:
+        """Return the validated stock-entry delivery interval."""
 
         try:
-            value = int(self._setting("STOCK_ENTRY_DELIVERY_DAY", 1))
+            value = int(self._setting("STOCK_ENTRY_AUTOMATION_INTERVAL_DAYS", 30))
         except (TypeError, ValueError):
-            value = 1
-        return min(max(value, 1), 28)
+            value = 30
+        return min(max(value, 1), 365)
 
     def get_scheduled_tasks(self) -> dict[str, dict[str, object]]:
         """Dynamically register one repeating report task when enabled."""
@@ -221,8 +229,9 @@ class InventoryManagerPlugin(
             }
         if self.monthly_stock_report_enabled() and self.stock_entry_email_recipient():
             tasks["monthly_stock_entry_report"] = {
-                "func": "run_monthly_stock_entry_report",
-                "schedule": "M",
+                "func": "run_scheduled_stock_entry_report",
+                "schedule": "I",
+                "minutes": self.stock_entry_automation_interval_days() * 24 * 60,
                 "repeats": -1,
             }
         return tasks
@@ -250,24 +259,10 @@ class InventoryManagerPlugin(
                 self.monthly_stock_report_enabled()
                 and self.stock_entry_email_recipient()
             ):
-                now = timezone.localtime()
-                delivery_day = self.stock_entry_delivery_day()
-                next_delivery = now.replace(
-                    day=delivery_day,
-                    hour=7,
-                    minute=0,
-                    second=0,
-                    microsecond=0,
+                Schedule.objects.filter(name=monthly_name).update(
+                    next_run=timezone.now()
+                    + timedelta(days=self.stock_entry_automation_interval_days())
                 )
-                if next_delivery <= now:
-                    next_delivery = (now.replace(day=28) + timedelta(days=4)).replace(
-                        day=delivery_day,
-                        hour=7,
-                        minute=0,
-                        second=0,
-                        microsecond=0,
-                    )
-                Schedule.objects.filter(name=monthly_name).update(next_run=next_delivery)
 
         if not self.automation_enabled() or not self.email_recipient():
             Schedule.objects.filter(name=replenishment_name).delete()
@@ -280,9 +275,11 @@ class InventoryManagerPlugin(
     def send_configured_report_email(self):
         """Generate and email a report using the saved delivery settings."""
 
+        context = build_report_context(policy=self.get_inventory_policy())
         return generate_and_email_replenishment_report(
             self.email_recipient(),
             self.email_subject(),
+            replenishment_csv(context),
         )
 
     def run_scheduled_report(self) -> None:
@@ -291,8 +288,33 @@ class InventoryManagerPlugin(
         if self.automation_enabled() and self.email_recipient():
             self.send_configured_report_email()
 
-    def run_monthly_stock_entry_report(self, force: bool = False):
-        """Generate, email, and retain one idempotent prior-month report."""
+    def send_stock_entry_test_email(self):
+        """Send the latest interval without adding it to the accounting register."""
+
+        from django.utils import timezone
+
+        from .automation import generate_stock_entry_report
+
+        recipient = self.stock_entry_email_recipient()
+        if not recipient:
+            return None
+        start, end = scheduled_stock_entry_window(
+            timezone.localdate(), self.stock_entry_automation_interval_days()
+        )
+        context = build_stock_entry_context(start, end)
+        output = generate_stock_entry_report(start, end)
+        send_stock_entry_report_email(
+            output,
+            recipient,
+            start,
+            end,
+            self.stock_entry_email_subject(),
+            stock_entry_csv(context),
+        )
+        return output
+
+    def run_scheduled_stock_entry_report(self, force: bool = False):
+        """Generate, email, and retain one idempotent interval report."""
 
         recipient = self.stock_entry_email_recipient()
         if (not force and not self.monthly_stock_report_enabled()) or not recipient:
@@ -303,11 +325,30 @@ class InventoryManagerPlugin(
         from .automation import generate_stock_entry_report
         from .models import StockEntryReportRun
 
-        start, end = previous_month_window(timezone.localdate())
+        today = timezone.localdate()
+        start, end = scheduled_stock_entry_window(
+            today, self.stock_entry_automation_interval_days()
+        )
+        latest = (
+            StockEntryReportRun.objects.filter(
+                kind=StockEntryReportRun.Kind.SCHEDULED
+            )
+            .exclude(status=StockEntryReportRun.Status.FAILED)
+            .order_by("-period_end")
+            .first()
+        )
+        if latest and latest.period_end >= end:
+            return latest
+        if latest and latest.period_end < end:
+            candidate_start = latest.period_end + timedelta(days=1)
+            if candidate_start <= end:
+                start = candidate_start
+
+        period_key = f"{start.isoformat()}:{end.isoformat()}"
         run, _ = StockEntryReportRun.objects.get_or_create(
-            period_key=start.strftime("%Y-%m"),
+            period_key=period_key,
             defaults={
-                "kind": StockEntryReportRun.Kind.MONTHLY,
+                "kind": StockEntryReportRun.Kind.SCHEDULED,
                 "period_start": start,
                 "period_end": end,
                 "recipient": recipient,
@@ -331,6 +372,7 @@ class InventoryManagerPlugin(
                 start,
                 end,
                 self.stock_entry_email_subject(),
+                stock_entry_csv(build_stock_entry_context(start, end)),
             )
             run.status = StockEntryReportRun.Status.EMAILED
             run.sent_at = timezone.now()
@@ -342,6 +384,25 @@ class InventoryManagerPlugin(
             raise
 
         return run
+
+    def run_monthly_stock_entry_report(self, force: bool = False):
+        """Compatibility alias for installations with an older queued task."""
+
+        return self.run_scheduled_stock_entry_report(force=force)
+
+    def days_until_next_email(self, task_key: str) -> int | None:
+        """Return the rounded-up number of days until a registered task runs."""
+
+        import math
+
+        from django.utils import timezone
+        from django_q.models import Schedule
+
+        schedule = Schedule.objects.filter(name=self.get_task_name(task_key)).first()
+        if schedule is None or schedule.next_run is None:
+            return None
+        seconds = (schedule.next_run - timezone.now()).total_seconds()
+        return max(0, math.ceil(seconds / 86400))
 
     def setup_urls(self):
         """Expose the simple Inventory Manager control panel."""
