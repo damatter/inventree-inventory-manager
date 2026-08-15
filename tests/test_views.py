@@ -1,8 +1,13 @@
+import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-import unittest
 
-from inventory_manager.views import _output_error, _output_url, _validate_settings
+from inventory_manager.views import (
+    _output_error,
+    _output_url,
+    _stock_report_window,
+    _validate_settings,
+)
 
 
 class SettingsValidationTests(unittest.TestCase):
@@ -86,6 +91,26 @@ class OutputUrlTests(unittest.TestCase):
         )
 
         self.assertEqual(_output_url(output), "https://files.example/report.pdf")
+
+
+class StockReportWindowTests(unittest.TestCase):
+    def test_valid_inclusive_window(self) -> None:
+        start, end, error = _stock_report_window(
+            {"period_start": "2026-07-01", "period_end": "2026-07-31"}
+        )
+
+        self.assertEqual(str(start), "2026-07-01")
+        self.assertEqual(str(end), "2026-07-31")
+        self.assertEqual(error, "")
+
+    def test_reversed_window_is_rejected(self) -> None:
+        start, end, error = _stock_report_window(
+            {"period_start": "2026-08-01", "period_end": "2026-07-31"}
+        )
+
+        self.assertIsNone(start)
+        self.assertIsNone(end)
+        self.assertIn("must not be after", error)
 
 
 class OutputErrorTests(unittest.TestCase):

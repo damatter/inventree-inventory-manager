@@ -37,6 +37,13 @@
         .reports { margin: 0; padding-left: 20px; }
         .reports li { margin: 8px 0; }
         .reports a { color: #225f91; font-weight: 650; }
+        .report-table { width: 100%; border-collapse: collapse; }
+        .report-table th, .report-table td { padding: 10px 8px; border-bottom: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+        .report-table th { color: #53616b; font-size: 12px; text-transform: uppercase; }
+        .status { display: inline-block; padding: 4px 7px; border-radius: 999px; background: #e7edf1; font-size: 12px; font-weight: 700; }
+        .status.acknowledged { background: #dcefe2; color: #205c39; }
+        .ack-form { display: grid; grid-template-columns: minmax(140px, 0.7fr) minmax(180px, 1fr) auto; gap: 8px; margin-top: 8px; }
+        .ack-form input { min-width: 0; }
         .locked { padding: 14px; border-radius: 7px; background: #f6f1df; color: #655419; }
         .notice { margin-bottom: 18px; padding: 14px; border-radius: 7px; background: #f6f1df; color: #655419; line-height: 1.45; }
         .footer { margin-top: 18px; color: #7a858d; font-size: 12px; text-align: center; }
@@ -44,6 +51,8 @@
             .topbar { align-items: flex-start; flex-direction: column-reverse; }
             .grid { grid-template-columns: 1fr; }
             .card { padding: 19px; }
+            .report-table { display: block; overflow-x: auto; }
+            .ack-form { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -73,6 +82,27 @@
             <input type="hidden" name="action" value="generate-report">
             <button class="primary" type="submit">Generate Replenishment Report</button>
         </form>
+    </section>
+
+    <section class="card">
+        <h2>Stock entered in a date range</h2>
+        <p>Creates an auditable PDF from manual stock additions, purchase receipts, and completed build output. Returns and stock counts are listed outside this inflow report.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="generate-stock-entry-report">
+            <div class="grid">
+                <div>
+                    <label for="period-start">Start date</label>
+                    <input id="period-start" name="period_start" type="date" value="{{ stock_report_default_start }}" required>
+                </div>
+                <div>
+                    <label for="period-end">End date</label>
+                    <input id="period-end" name="period_end" type="date" value="{{ stock_report_default_end }}" required>
+                </div>
+            </div>
+            <div style="margin-top: 20px;"><button class="primary" type="submit">Generate Stock Entry Report</button></div>
+        </form>
+        <span class="help">The default window is the complete prior calendar month. Any inclusive window up to one year can be selected.</span>
     </section>
 
     <section class="card">
@@ -119,6 +149,19 @@
                     </label>
                     <span class="help">The first run is scheduled when these settings are saved.</span>
                 </div>
+                <div>
+                    <label for="stock-entry-subject">Stock-entry email subject</label>
+                    <input id="stock-entry-subject" name="stock_entry_email_subject" type="text" value="{{ stock_entry_email_subject }}">
+                    <span class="help">The month and year are appended automatically.</span>
+                </div>
+                <div>
+                    <label>Monthly stock-entry delivery</label>
+                    <label class="toggle" for="monthly-stock-report-enabled">
+                        <input id="monthly-stock-report-enabled" name="monthly_stock_report_enabled" type="checkbox"{% if monthly_stock_report_enabled %} checked{% endif %}>
+                        Email the prior calendar month on the first day of each month
+                    </label>
+                    <span class="help">Each month is sent at most once and remains pending until somebody records the accounting acknowledgement below.</span>
+                </div>
             </div>
             <div style="margin-top: 20px;">
                 <button class="secondary" type="submit">Save Settings</button>
@@ -144,10 +187,56 @@
             <button class="primary" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send Test Report Now</button>
         </form>
         <span class="help">Use this once to confirm the PDF arrives before enabling automatic delivery.</span>
+        <form method="post" style="margin-top: 16px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="send-stock-entry-email">
+            <button class="secondary" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send Prior Month Stock Entry Report</button>
+        </form>
+        <span class="help">This uses the accounting register and will not send an already delivered month twice.</span>
         {% else %}
         <div class="locked">An InvenTree administrator can send report emails.</div>
         {% endif %}
     </section>
+
+    {% if stock_report_runs %}
+    <section class="card">
+        <h2>Stock-entry accounting register</h2>
+        <p>This register closes the loop after delivery. Mark a report recorded only after its totals have been entered into the accounting system.</p>
+        <table class="report-table">
+            <thead><tr><th>Period</th><th>Delivery</th><th>Accounting</th></tr></thead>
+            <tbody>
+            {% for run in stock_report_runs %}
+            <tr>
+                <td>
+                    <strong>{{ run.period_start }} to {{ run.period_end }}</strong><br>
+                    <span class="help">{{ run.kind }}{% if run.url %} &middot; <a href="{{ run.url }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</span>
+                </td>
+                <td>
+                    <span class="status {{ run.status_code }}">{{ run.status }}</span>
+                    {% if run.sent_at %}<br><span class="help">Sent {{ run.sent_at }}{% if run.recipient %} to {{ run.recipient }}{% endif %}</span>{% endif %}
+                    {% if run.error %}<br><span class="help" style="color:#8a2424">{{ run.error }}</span>{% endif %}
+                </td>
+                <td>
+                    {% if run.acknowledged_at %}
+                    <strong>{{ run.accounting_reference|default:"Recorded" }}</strong><br>
+                    <span class="help">Acknowledged {{ run.acknowledged_at }} by {{ run.acknowledged_by }}{% if run.acknowledgement_notes %}<br>{{ run.acknowledgement_notes }}{% endif %}</span>
+                    {% else %}
+                    <form method="post" class="ack-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="acknowledge-stock-report">
+                        <input type="hidden" name="report_run_id" value="{{ run.pk }}">
+                        <input name="accounting_reference" type="text" placeholder="Accounting reference">
+                        <input name="acknowledgement_notes" type="text" placeholder="Notes (optional)">
+                        <button class="secondary" type="submit">Mark Recorded</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
 
     {% if latest_outputs %}
     <section class="card">

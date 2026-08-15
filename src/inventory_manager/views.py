@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from .automation import PLUGIN_SLUG, ReportSetupError, queue_replenishment_report
+from .automation import (
+    PLUGIN_SLUG,
+    ReportSetupError,
+    generate_stock_entry_report,
+    queue_replenishment_report,
+)
 from .emailing import (
     DEFAULT_EMAIL_SUBJECT,
     ReportEmailError,
@@ -44,10 +50,15 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
         interval = 7
 
     automation_enabled = post_data.get("automation_enabled") == "on"
+    monthly_stock_report_enabled = post_data.get("monthly_stock_report_enabled") == "on"
     email_recipient = str(post_data.get("email_recipient", "") or "").strip()
     email_subject = (
         str(post_data.get("email_subject", "") or "").strip()
         or DEFAULT_EMAIL_SUBJECT
+    )
+    stock_entry_email_subject = (
+        str(post_data.get("stock_entry_email_subject", "") or "").strip()
+        or "DiCor Monthly Stock Entry Report"
     )
 
     if email_recipient:
@@ -55,7 +66,7 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
             email_recipient = normalize_recipient(email_recipient)
         except ReportEmailError as error:
             errors.append(str(error))
-    elif automation_enabled:
+    elif automation_enabled or monthly_stock_report_enabled:
         errors.append(
             "Enter a recipient email address before enabling automatic delivery."
         )
@@ -68,9 +79,26 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
             "EMAIL_SUBJECT": email_subject,
             "AUTOMATION_ENABLED": automation_enabled,
             "AUTOMATION_INTERVAL_DAYS": interval,
+            "MONTHLY_STOCK_REPORT_ENABLED": monthly_stock_report_enabled,
+            "STOCK_ENTRY_EMAIL_SUBJECT": stock_entry_email_subject,
         },
         errors,
     )
+
+
+def _stock_report_window(post_data) -> tuple[date | None, date | None, str]:
+    """Validate an inclusive manual stock-entry report date window."""
+
+    try:
+        start = date.fromisoformat(str(post_data.get("period_start", "")))
+        end = date.fromisoformat(str(post_data.get("period_end", "")))
+    except ValueError:
+        return None, None, "Enter a valid start and end date."
+    if start > end:
+        return None, None, "The start date must not be after the end date."
+    if end - start > timedelta(days=366):
+        return None, None, "Choose a reporting window of one year or less."
+    return start, end, ""
 
 
 def _schedule_integration_enabled() -> bool:
@@ -191,6 +219,28 @@ def control_panel(request, plugin):
                     )
                     return redirect(plugin.control_panel_url)
 
+            elif action == "send-stock-entry-email":
+                if not request.user.is_staff:
+                    raise PermissionDenied(
+                        "Only an InvenTree administrator can send report emails."
+                    )
+                try:
+                    run = plugin.run_monthly_stock_entry_report(force=True)
+                except Exception as error:
+                    messages.error(request, f"Stock-entry report delivery failed: {error}")
+                else:
+                    if run is None:
+                        messages.error(request, "Enter and save a report recipient first.")
+                    else:
+                        messages.success(
+                            request,
+                            (
+                                f"Stock-entry report for {run.period_start:%B %Y} is "
+                                f"{run.get_status_display().lower()}."
+                            ),
+                        )
+                        return redirect(plugin.control_panel_url)
+
             elif action == "generate-report":
                 try:
                     output = queue_replenishment_report(request)
@@ -199,6 +249,61 @@ def control_panel(request, plugin):
                 else:
                     status_url = f"{plugin.control_panel_url}report/{output.pk}/"
                     return redirect(status_url)
+
+            elif action == "generate-stock-entry-report":
+                start, end, error = _stock_report_window(request.POST)
+                if error:
+                    messages.error(request, error)
+                else:
+                    try:
+                        output = generate_stock_entry_report(start, end, request=request)
+                    except ReportSetupError as report_error:
+                        messages.error(request, str(report_error))
+                    else:
+                        from .models import StockEntryReportRun
+
+                        StockEntryReportRun.objects.create(
+                            kind=StockEntryReportRun.Kind.MANUAL,
+                            period_start=start,
+                            period_end=end,
+                            status=StockEntryReportRun.Status.GENERATED,
+                            output_id=output.pk,
+                            generated_by=request.user,
+                        )
+                        return redirect(
+                            f"{plugin.control_panel_url}report/{output.pk}/"
+                        )
+
+            elif action == "acknowledge-stock-report":
+                from django.shortcuts import get_object_or_404
+                from django.utils import timezone
+
+                from .models import StockEntryReportRun
+
+                run = get_object_or_404(
+                    StockEntryReportRun,
+                    pk=request.POST.get("report_run_id"),
+                )
+                run.status = StockEntryReportRun.Status.ACKNOWLEDGED
+                run.acknowledged_at = timezone.now()
+                run.acknowledged_by = request.user
+                run.accounting_reference = str(
+                    request.POST.get("accounting_reference", "") or ""
+                ).strip()[:120]
+                run.acknowledgement_notes = str(
+                    request.POST.get("acknowledgement_notes", "") or ""
+                ).strip()
+                run.save(
+                    update_fields=[
+                        "status",
+                        "acknowledged_at",
+                        "acknowledged_by",
+                        "accounting_reference",
+                        "acknowledgement_notes",
+                    ]
+                )
+                messages.success(request, "The stock-entry report was marked as recorded.")
+                return redirect(plugin.control_panel_url)
 
         from common.models import DataOutput
 
@@ -213,6 +318,43 @@ def control_panel(request, plugin):
                 }
             )
 
+        from django.utils import timezone
+
+        from .models import StockEntryReportRun
+        from .stock_entries import previous_month_window
+
+        output_ids = [
+            output_id
+            for output_id in StockEntryReportRun.objects.exclude(output_id=None).values_list(
+                "output_id", flat=True
+            )[:20]
+        ]
+        output_urls = {
+            output.pk: _output_url(output)
+            for output in DataOutput.objects.filter(pk__in=output_ids)
+        }
+        stock_report_runs = [
+            {
+                "pk": run.pk,
+                "kind": run.get_kind_display(),
+                "period_start": run.period_start,
+                "period_end": run.period_end,
+                "status": run.get_status_display(),
+                "status_code": run.status,
+                "recipient": run.recipient,
+                "created": run.created,
+                "sent_at": run.sent_at,
+                "url": output_urls.get(run.output_id, ""),
+                "error": run.error,
+                "acknowledged_at": run.acknowledged_at,
+                "acknowledged_by": str(run.acknowledged_by or ""),
+                "accounting_reference": run.accounting_reference,
+                "acknowledgement_notes": run.acknowledgement_notes,
+            }
+            for run in StockEntryReportRun.objects.select_related("acknowledged_by")[:12]
+        ]
+        default_start, default_end = previous_month_window(timezone.localdate())
+
         context = {
             "plugin_title": plugin.TITLE,
             "plugin_version": plugin.VERSION,
@@ -223,9 +365,14 @@ def control_panel(request, plugin):
             "automation_interval_days": plugin.automation_interval_days(),
             "email_recipient": plugin.email_recipient(),
             "email_subject": plugin.email_subject(),
+            "monthly_stock_report_enabled": plugin.monthly_stock_report_enabled(),
+            "stock_entry_email_subject": plugin.stock_entry_email_subject(),
             "email_configured": email_delivery_available(),
             "schedule_integration_enabled": _schedule_integration_enabled(),
             "latest_outputs": latest_outputs,
+            "stock_report_runs": stock_report_runs,
+            "stock_report_default_start": default_start.isoformat(),
+            "stock_report_default_end": default_end.isoformat(),
         }
         return render(request, "inventory_manager/control_panel.html", context)
 

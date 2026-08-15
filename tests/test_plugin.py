@@ -13,6 +13,10 @@ class FakeReportMixin:
     """Minimal stand-in for InvenTree's report mixin."""
 
 
+class FakeAppMixin:
+    """Minimal stand-in for InvenTree's Django app mixin."""
+
+
 class FakeSettingsMixin:
     """Minimal stand-in for InvenTree's settings mixin."""
 
@@ -40,6 +44,7 @@ def import_plugin_module():
     plugin_package.InvenTreePlugin = FakeInvenTreePlugin
     mixins_module = ModuleType("plugin.mixins")
     mixins_module.ReportMixin = FakeReportMixin
+    mixins_module.AppMixin = FakeAppMixin
     mixins_module.SettingsMixin = FakeSettingsMixin
     mixins_module.ScheduleMixin = FakeScheduleMixin
     mixins_module.UrlsMixin = FakeUrlsMixin
@@ -61,8 +66,9 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(issubclass(plugin_class, FakeReportMixin))
         self.assertTrue(issubclass(plugin_class, FakeInvenTreePlugin))
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
-        self.assertEqual(plugin_class.MIN_VERSION, "1.0.0")
-        self.assertEqual(plugin_class.VERSION, "0.3.1")
+        self.assertEqual(plugin_class.MIN_VERSION, "1.3.2")
+        self.assertEqual(plugin_class.MAX_VERSION, "1.3.99")
+        self.assertEqual(plugin_class.VERSION, "0.4.0")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -115,6 +121,26 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(str(policy.assumed_minimum), "4")
         self.assertEqual(str(policy.target_multiplier), "1.5")
 
+    def test_stock_entry_report_receives_requested_window(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        report = SimpleNamespace(name="Monthly Stock Entry Report", description="")
+        request = SimpleNamespace(
+            inventory_manager_period_start="2026-07-01",
+            inventory_manager_period_end="2026-07-31",
+        )
+
+        with patch.object(
+            module,
+            "build_stock_entry_context",
+            return_value={"event_count": 4},
+        ) as build:
+            context = {}
+            plugin.add_report_context(report, object(), request, context)
+
+        build.assert_called_once_with("2026-07-01", "2026-07-31")
+        self.assertEqual(context["event_count"], 4)
+
     def test_control_panel_url_is_root_relative(self) -> None:
         module = import_plugin_module()
         plugin = module.InventoryManagerPlugin()
@@ -137,7 +163,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(action["title"], "Reporting")
         self.assertEqual(
             action["source"],
-            "/plugin/inventory-manager/reporting.js:openReporting?v=0.3.1",
+            "/plugin/inventory-manager/reporting.js:openReporting?v=0.4.0",
         )
         self.assertEqual(dashboard["title"], "Reporting")
         self.assertEqual(
@@ -154,7 +180,7 @@ class PluginTests(unittest.TestCase):
         )
         self.assertEqual(
             dashboard["source"],
-            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.3.1",
+            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.4.0",
         )
 
     def test_mobile_dashboard_returns_versioned_summary(self) -> None:
@@ -217,6 +243,21 @@ class PluginTests(unittest.TestCase):
 
         values["EMAIL_RECIPIENT"] = ""
         self.assertEqual(plugin.get_scheduled_tasks(), {})
+
+    def test_monthly_stock_report_uses_calendar_schedule(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        values = {
+            "MONTHLY_STOCK_REPORT_ENABLED": True,
+            "EMAIL_RECIPIENT": "dad@example.com",
+        }
+        plugin.get_setting = lambda key, **kwargs: values.get(
+            key, kwargs.get("backup_value")
+        )
+
+        task = plugin.get_scheduled_tasks()["monthly_stock_entry_report"]
+        self.assertEqual(task["func"], "run_monthly_stock_entry_report")
+        self.assertEqual(task["schedule"], "M")
 
     def test_manual_email_uses_saved_recipient_and_subject(self) -> None:
         module = import_plugin_module()

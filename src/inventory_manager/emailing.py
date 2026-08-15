@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 from datetime import date
 from typing import Any
 
@@ -56,10 +57,8 @@ def _read_report_pdf(output: Any) -> bytes:
     except Exception as error:
         raise ReportEmailError("The generated PDF could not be read.") from error
     finally:
-        try:
+        with suppress(Exception):
             report_file.close()
-        except Exception:
-            pass
 
     if not content:
         raise ReportEmailError("The generated PDF file is empty.")
@@ -107,6 +106,52 @@ def send_replenishment_report_email(
     except Exception as error:
         raise ReportEmailError(f"InvenTree could not send the email: {error}") from error
 
+    if sent < 1:
+        raise ReportEmailError("InvenTree's email backend did not send the message.")
+    return sent
+
+
+def send_stock_entry_report_email(
+    output: Any,
+    recipient: object,
+    start: date,
+    end: date,
+    subject: object = "DiCor Monthly Stock Entry Report",
+) -> int:
+    """Email an inventory-inflow PDF with an accounting acknowledgement reminder."""
+
+    address = normalize_recipient(recipient)
+    email_subject = str(subject or "").strip() or "DiCor Monthly Stock Entry Report"
+    if not email_delivery_available():
+        raise ReportEmailError("InvenTree's outgoing email server is not configured.")
+
+    from django.conf import settings
+    from django.core.mail import EmailMessage
+
+    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+    if not sender:
+        raise ReportEmailError("InvenTree does not have a default sender address.")
+
+    message = EmailMessage(
+        subject=f"{email_subject} - {start:%B %Y}",
+        body=(
+            f"Attached are inventory inflows recorded from {start} through {end}.\n\n"
+            "After posting the totals, open Reporting in InvenTree and mark this period "
+            "as recorded with the accounting reference.\n\n"
+            "INTERNAL - DiCor Engineering"
+        ),
+        from_email=sender,
+        to=[address],
+    )
+    message.attach(
+        f"stock-entries-{start.isoformat()}-to-{end.isoformat()}.pdf",
+        _read_report_pdf(output),
+        "application/pdf",
+    )
+    try:
+        sent = int(message.send(fail_silently=False) or 0)
+    except Exception as error:
+        raise ReportEmailError(f"InvenTree could not send the email: {error}") from error
     if sent < 1:
         raise ReportEmailError("InvenTree's email backend did not send the message.")
     return sent
