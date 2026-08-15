@@ -49,9 +49,20 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
         errors.append("Automatic report interval must be between 1 and 365 days.")
         interval = 7
 
+    try:
+        stock_entry_delivery_day = int(post_data.get("stock_entry_delivery_day", "1"))
+        if not 1 <= stock_entry_delivery_day <= 28:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append("Stock-entry delivery day must be between 1 and 28.")
+        stock_entry_delivery_day = 1
+
     automation_enabled = post_data.get("automation_enabled") == "on"
     monthly_stock_report_enabled = post_data.get("monthly_stock_report_enabled") == "on"
     email_recipient = str(post_data.get("email_recipient", "") or "").strip()
+    stock_entry_email_recipient = str(
+        post_data.get("stock_entry_email_recipient", "") or ""
+    ).strip()
     email_subject = (
         str(post_data.get("email_subject", "") or "").strip()
         or DEFAULT_EMAIL_SUBJECT
@@ -66,9 +77,21 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
             email_recipient = normalize_recipient(email_recipient)
         except ReportEmailError as error:
             errors.append(str(error))
-    elif automation_enabled or monthly_stock_report_enabled:
+    elif automation_enabled:
         errors.append(
-            "Enter a recipient email address before enabling automatic delivery."
+            "Enter a replenishment recipient before enabling its automatic delivery."
+        )
+
+    if stock_entry_email_recipient:
+        try:
+            stock_entry_email_recipient = normalize_recipient(
+                stock_entry_email_recipient
+            )
+        except ReportEmailError as error:
+            errors.append(str(error))
+    elif monthly_stock_report_enabled and not email_recipient:
+        errors.append(
+            "Enter a stock-entry recipient before enabling its automatic delivery."
         )
 
     return (
@@ -80,7 +103,9 @@ def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
             "AUTOMATION_ENABLED": automation_enabled,
             "AUTOMATION_INTERVAL_DAYS": interval,
             "MONTHLY_STOCK_REPORT_ENABLED": monthly_stock_report_enabled,
+            "STOCK_ENTRY_EMAIL_RECIPIENT": stock_entry_email_recipient,
             "STOCK_ENTRY_EMAIL_SUBJECT": stock_entry_email_subject,
+            "STOCK_ENTRY_DELIVERY_DAY": stock_entry_delivery_day,
         },
         errors,
     )
@@ -353,6 +378,9 @@ def control_panel(request, plugin):
             }
             for run in StockEntryReportRun.objects.select_related("acknowledged_by")[:12]
         ]
+        pending_accounting_count = StockEntryReportRun.objects.exclude(
+            status=StockEntryReportRun.Status.ACKNOWLEDGED
+        ).exclude(status=StockEntryReportRun.Status.FAILED).count()
         default_start, default_end = previous_month_window(timezone.localdate())
 
         context = {
@@ -366,11 +394,14 @@ def control_panel(request, plugin):
             "email_recipient": plugin.email_recipient(),
             "email_subject": plugin.email_subject(),
             "monthly_stock_report_enabled": plugin.monthly_stock_report_enabled(),
+            "stock_entry_email_recipient": plugin.stock_entry_email_recipient(),
             "stock_entry_email_subject": plugin.stock_entry_email_subject(),
+            "stock_entry_delivery_day": plugin.stock_entry_delivery_day(),
             "email_configured": email_delivery_available(),
             "schedule_integration_enabled": _schedule_integration_enabled(),
             "latest_outputs": latest_outputs,
             "stock_report_runs": stock_report_runs,
+            "pending_accounting_count": pending_accounting_count,
             "stock_report_default_start": default_start.isoformat(),
             "stock_report_default_end": default_end.isoformat(),
         }

@@ -20,6 +20,8 @@ class SettingsValidationTests(unittest.TestCase):
                 "automation_enabled": "on",
                 "email_recipient": " dad@example.com ",
                 "email_subject": "Weekly Stock Report",
+                "stock_entry_email_recipient": " accounts@example.com ",
+                "stock_entry_delivery_day": "12",
             }
         )
 
@@ -30,6 +32,10 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(values["AUTOMATION_INTERVAL_DAYS"], 7)
         self.assertEqual(values["EMAIL_RECIPIENT"], "dad@example.com")
         self.assertEqual(values["EMAIL_SUBJECT"], "Weekly Stock Report")
+        self.assertEqual(
+            values["STOCK_ENTRY_EMAIL_RECIPIENT"], "accounts@example.com"
+        )
+        self.assertEqual(values["STOCK_ENTRY_DELIVERY_DAY"], 12)
 
     def test_invalid_values_return_safe_defaults(self) -> None:
         values, errors = _validate_settings(
@@ -59,11 +65,29 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertEqual(
             errors,
             [
-                "Enter a recipient email address before enabling automatic delivery."
+                "Enter a replenishment recipient before enabling its automatic delivery."
             ],
         )
         self.assertEqual(values["EMAIL_RECIPIENT"], "")
         self.assertTrue(values["AUTOMATION_ENABLED"])
+
+    def test_stock_entry_delivery_requires_recipient_and_valid_day(self) -> None:
+        values, errors = _validate_settings(
+            {
+                "default_minimum_stock": "2",
+                "low_buffer_multiplier": "2",
+                "automation_interval_days": "7",
+                "stock_entry_delivery_day": "31",
+                "monthly_stock_report_enabled": "on",
+            }
+        )
+
+        self.assertEqual(values["STOCK_ENTRY_DELIVERY_DAY"], 1)
+        self.assertIn("Stock-entry delivery day must be between 1 and 28.", errors)
+        self.assertIn(
+            "Enter a stock-entry recipient before enabling its automatic delivery.",
+            errors,
+        )
 
     def test_invalid_recipient_is_rejected(self) -> None:
         values, errors = _validate_settings(

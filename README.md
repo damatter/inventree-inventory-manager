@@ -8,7 +8,7 @@ template. It provides:
 - `critical`, `reorder`, `low_buffer`, and `healthy` classifications;
 - healthy parts omitted from the actionable report;
 - a configurable replenishment target;
-- a simple screen for settings and one-click PDF generation; and
+- a responsive reporting dashboard with separate replenishment and stock-entry workflows;
 - optional scheduled PDF delivery by email through InvenTree's background
   worker; and
 - manual date-window and automatic prior-calendar-month stock-entry reports;
@@ -45,7 +45,7 @@ python -m pip install --editable .
 ```
 
 The package exposes `InventoryManagerPlugin` through the required
-`inventree_plugins` entry-point group. Version 0.4.0 targets InvenTree 1.3.x;
+`inventree_plugins` entry-point group. Version 0.5.0 targets InvenTree 1.3.x;
 the stock-history contract should be reviewed before enabling it on a future
 InvenTree 1.4 release.
 
@@ -85,20 +85,21 @@ Enable InvenTree's **Plugin URL Integration**, **Plugin UI Integration**, and
 Manager** item will appear in the main navigation. The same page is available
 directly at `/plugin/inventory-manager/`.
 
-The large report button is available to authenticated users. Administrators
-can also change the default minimum, low-buffer multiplier, automation toggle,
-and automatic report interval. Automatic reports are retained in the Recent
-Reports list on the same screen.
+Both report workflows are available to authenticated users. Administrators can
+also change the replenishment policy and delivery interval, plus the independent
+stock-entry recipient, subject, enabled state, and monthly delivery day.
+Automatic reports are retained in the Recent Reports list on the same screen.
 
 Plugin settings and generated report records use InvenTree's own database
 models, so the normal `invoke backup`, `invoke restore`, and `invoke update`
 workflows include them. Install the same plugin version before restoring an
 InvenTree database onto another server.
 
-Version 0.4.0 adds the `StockEntryReportRun` plugin table. Install 0.4.0 before
-running `invoke update`; the migration creates the table without replacing or
-rewriting existing Inventory Manager data. Each run retains its period, PDF job,
-recipient, delivery state, error, and optional accounting acknowledgement.
+Version 0.4.0 added the `StockEntryReportRun` plugin table. Version 0.5.0 adds
+settings only and does not alter that table. Install the current plugin before
+running `invoke update`; existing run history is retained. Each run stores its
+period, PDF job, recipient, delivery state, error, and optional accounting
+acknowledgement.
 
 ## Automatic email reporting
 
@@ -118,8 +119,9 @@ Reports, and emails it to the saved recipient as an attachment. The first run
 is scheduled when the automation settings are saved; later runs repeat at the
 configured interval.
 
-Monthly stock-entry delivery is a separate toggle. It runs on the first day of
-each month for the complete prior calendar month, and its period key prevents a
-successful month from being sent twice. After the recipient enters the totals in
-the accounting system, they return to Reporting and use **Mark Recorded** with an
-accounting reference or note. Unacknowledged periods stay visible in the register.
+Monthly stock-entry delivery has its own recipient, subject, toggle, and delivery
+day from 1 through 28. It always covers the complete prior calendar month, and
+its period key prevents a successful month from being sent twice. After the
+recipient enters the totals in the accounting system, they return to Reporting
+and use **Mark Recorded** with an accounting reference or note. Unacknowledged
+periods stay visible in the register.

@@ -41,7 +41,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.4.0"
+    VERSION = "0.5.0"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.3.2"
     MAX_VERSION = "1.3.99"
@@ -105,11 +105,25 @@ class InventoryManagerPlugin(
             "default": False,
             "validator": bool,
         },
+        "STOCK_ENTRY_EMAIL_RECIPIENT": {
+            "name": "Stock-entry report recipient",
+            "description": (
+                "Email address for stock-entry reports; blank uses the replenishment recipient"
+            ),
+            "default": "",
+            "validator": str,
+        },
         "STOCK_ENTRY_EMAIL_SUBJECT": {
             "name": "Stock-entry email subject",
             "description": "Subject used for monthly inventory-inflow reports",
             "default": "DiCor Monthly Stock Entry Report",
             "validator": str,
+        },
+        "STOCK_ENTRY_DELIVERY_DAY": {
+            "name": "Stock-entry delivery day",
+            "description": "Day of the month to deliver the prior calendar month's report",
+            "default": 1,
+            "validator": int,
         },
     }
 
@@ -179,21 +193,33 @@ class InventoryManagerPlugin(
             or "DiCor Monthly Stock Entry Report"
         ).strip()
 
+    def stock_entry_email_recipient(self) -> str:
+        """Return the independently configurable stock-entry recipient."""
+
+        value = str(self._setting("STOCK_ENTRY_EMAIL_RECIPIENT", "") or "").strip()
+        return value or self.email_recipient()
+
+    def stock_entry_delivery_day(self) -> int:
+        """Return a safe monthly delivery day which exists in every month."""
+
+        try:
+            value = int(self._setting("STOCK_ENTRY_DELIVERY_DAY", 1))
+        except (TypeError, ValueError):
+            value = 1
+        return min(max(value, 1), 28)
+
     def get_scheduled_tasks(self) -> dict[str, dict[str, object]]:
         """Dynamically register one repeating report task when enabled."""
 
-        if not self.email_recipient():
-            return {}
-
         tasks = {}
-        if self.automation_enabled():
+        if self.automation_enabled() and self.email_recipient():
             tasks["replenishment_report"] = {
                 "func": "run_scheduled_report",
                 "schedule": "I",
                 "minutes": self.automation_interval_days() * 24 * 60,
                 "repeats": -1,
             }
-        if self.monthly_stock_report_enabled():
+        if self.monthly_stock_report_enabled() and self.stock_entry_email_recipient():
             tasks["monthly_stock_entry_report"] = {
                 "func": "run_monthly_stock_entry_report",
                 "schedule": "M",
@@ -215,21 +241,40 @@ class InventoryManagerPlugin(
             from django.utils import timezone
 
             self.register_tasks()
-            if self.automation_enabled():
+            if self.automation_enabled() and self.email_recipient():
                 Schedule.objects.filter(name=replenishment_name).update(
                     next_run=timezone.now()
                     + timedelta(days=self.automation_interval_days())
                 )
-            if self.monthly_stock_report_enabled():
+            if (
+                self.monthly_stock_report_enabled()
+                and self.stock_entry_email_recipient()
+            ):
                 now = timezone.localtime()
-                first_next_month = (now.replace(day=28) + timedelta(days=4)).replace(
-                    day=1, hour=7, minute=0, second=0, microsecond=0
+                delivery_day = self.stock_entry_delivery_day()
+                next_delivery = now.replace(
+                    day=delivery_day,
+                    hour=7,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
                 )
-                Schedule.objects.filter(name=monthly_name).update(next_run=first_next_month)
+                if next_delivery <= now:
+                    next_delivery = (now.replace(day=28) + timedelta(days=4)).replace(
+                        day=delivery_day,
+                        hour=7,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    )
+                Schedule.objects.filter(name=monthly_name).update(next_run=next_delivery)
 
-        if not self.automation_enabled():
+        if not self.automation_enabled() or not self.email_recipient():
             Schedule.objects.filter(name=replenishment_name).delete()
-        if not self.monthly_stock_report_enabled():
+        if (
+            not self.monthly_stock_report_enabled()
+            or not self.stock_entry_email_recipient()
+        ):
             Schedule.objects.filter(name=monthly_name).delete()
 
     def send_configured_report_email(self):
@@ -249,7 +294,8 @@ class InventoryManagerPlugin(
     def run_monthly_stock_entry_report(self, force: bool = False):
         """Generate, email, and retain one idempotent prior-month report."""
 
-        if (not force and not self.monthly_stock_report_enabled()) or not self.email_recipient():
+        recipient = self.stock_entry_email_recipient()
+        if (not force and not self.monthly_stock_report_enabled()) or not recipient:
             return None
 
         from django.utils import timezone
@@ -264,7 +310,7 @@ class InventoryManagerPlugin(
                 "kind": StockEntryReportRun.Kind.MONTHLY,
                 "period_start": start,
                 "period_end": end,
-                "recipient": self.email_recipient(),
+                "recipient": recipient,
             },
         )
         if run.status in {
@@ -281,7 +327,7 @@ class InventoryManagerPlugin(
             run.save(update_fields=["output_id", "status", "error"])
             send_stock_entry_report_email(
                 output,
-                self.email_recipient(),
+                recipient,
                 start,
                 end,
                 self.stock_entry_email_subject(),

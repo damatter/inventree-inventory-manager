@@ -5,257 +5,191 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ plugin_title }}</title>
     <style>
-        :root {
-            color-scheme: light;
-            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            color: #263746;
-            background: #f3f5f7;
-        }
+        :root { color-scheme: light; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #183044; background: #edf1f4; }
         * { box-sizing: border-box; }
         body { margin: 0; }
-        .shell { max-width: 920px; margin: 0 auto; padding: 28px 18px 48px; }
-        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
-        h1 { margin: 0; font-size: 30px; }
-        .subtitle { margin: 5px 0 0; color: #687681; }
-        .back { color: #344b5e; font-weight: 650; text-decoration: none; }
-        .card { margin-bottom: 18px; padding: 24px; border: 1px solid #d7dde2; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgb(35 52 66 / 6%); }
-        .card h2 { margin: 0 0 8px; font-size: 21px; }
-        .card p { margin: 0 0 18px; color: #687681; line-height: 1.5; }
-        .primary { width: 100%; min-height: 58px; padding: 14px 22px; border: 0; border-radius: 8px; background: #26734d; color: white; font-size: 18px; font-weight: 750; cursor: pointer; }
-        .primary:hover { background: #1f6140; }
-        .primary:disabled, .secondary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .secondary { padding: 11px 20px; border: 0; border-radius: 7px; background: #344b5e; color: white; font-weight: 700; cursor: pointer; }
-        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-        label { display: block; margin-bottom: 7px; font-weight: 700; }
-        input[type="number"], input[type="email"], input[type="text"] { width: 100%; padding: 11px 12px; border: 1px solid #b8c2ca; border-radius: 6px; font: inherit; }
-        .help { display: block; margin-top: 6px; color: #6d7982; font-size: 13px; line-height: 1.4; }
-        .toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 8px; }
+        button, input { font: inherit; }
+        a { color: #176b8c; }
+        .shell { max-width: 1160px; margin: 0 auto; padding: 28px 20px 56px; }
+        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+        .brand { display: flex; align-items: baseline; gap: 10px; }
+        .brand strong { font-size: 19px; }
+        .version { color: #71808a; font-size: 12px; }
+        .back { color: #344b5e; font-weight: 700; text-decoration: none; }
+        .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 30px; border-radius: 16px; color: #fff; background: linear-gradient(125deg, #163d57, #176b78); box-shadow: 0 12px 28px rgb(20 54 75 / 16%); }
+        .hero h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 42px); line-height: 1.1; }
+        .hero p { max-width: 680px; margin: 0; color: #d8e8ed; font-size: 16px; line-height: 1.55; }
+        .hero-stats { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 10px; }
+        .hero-stat { min-width: 132px; padding: 14px 16px; border: 1px solid rgb(255 255 255 / 20%); border-radius: 10px; background: rgb(255 255 255 / 9%); }
+        .hero-stat span { display: block; color: #d8e8ed; font-size: 12px; }
+        .hero-stat strong { display: block; margin-top: 3px; font-size: 20px; }
+        .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 30px 2px 14px; }
+        .section-heading h2 { margin: 0; font-size: 21px; }
+        .section-heading p { margin: 4px 0 0; color: #687681; }
+        .workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        .card { border: 1px solid #d5dde3; border-radius: 13px; background: #fff; box-shadow: 0 3px 12px rgb(35 52 66 / 6%); }
+        .workflow { display: flex; flex-direction: column; min-height: 100%; padding: 24px; }
+        .workflow-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+        .eyebrow { margin-bottom: 6px; color: #27718e; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .workflow h3 { margin: 0; font-size: 23px; }
+        .workflow p { margin: 9px 0 18px; color: #687681; line-height: 1.5; }
+        .status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; color: #51616c; background: #edf1f3; font-size: 12px; font-weight: 750; white-space: nowrap; }
+        .status.on, .status.acknowledged { color: #205c39; background: #dcefe2; }
+        .status::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ""; }
+        .delivery-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+        .summary-item { padding: 11px 12px; border-radius: 8px; background: #f3f6f8; }
+        .summary-item span { display: block; color: #71808a; font-size: 11px; font-weight: 750; text-transform: uppercase; }
+        .summary-item strong { display: block; margin-top: 4px; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+        .date-grid, .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 750; }
+        input[type="number"], input[type="email"], input[type="text"], input[type="date"] { width: 100%; padding: 10px 11px; border: 1px solid #b8c2ca; border-radius: 7px; color: #183044; background: #fff; }
+        input:focus { outline: 3px solid rgb(39 113 142 / 14%); border-color: #27718e; }
+        .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: auto; padding-top: 18px; }
+        .button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; padding: 10px 16px; border: 0; border-radius: 8px; color: #fff; background: #176b78; font-weight: 750; cursor: pointer; text-decoration: none; }
+        .button:hover { background: #125d69; }
+        .button.secondary { color: #263f51; background: #e5ebef; }
+        .button.secondary:hover { background: #d7e0e5; }
+        .button:disabled { opacity: .45; cursor: not-allowed; }
+        .help { display: block; margin-top: 5px; color: #71808a; font-size: 12px; line-height: 1.4; }
+        .settings { margin-top: 18px; overflow: hidden; }
+        .settings summary { padding: 18px 22px; cursor: pointer; font-size: 16px; font-weight: 800; list-style-position: inside; }
+        .settings-body { padding: 2px 22px 22px; }
+        .settings-section { padding: 18px; border: 1px solid #e0e6ea; border-radius: 10px; background: #f9fafb; }
+        .settings-section h3 { margin: 0 0 4px; font-size: 17px; }
+        .settings-section > p { margin: 0 0 16px; color: #687681; font-size: 13px; line-height: 1.45; }
+        .toggle { display: flex; align-items: center; gap: 9px; min-height: 42px; margin: 0; }
         .toggle input { width: 20px; height: 20px; }
-        .messages { margin-bottom: 18px; }
-        .message { margin-bottom: 8px; padding: 12px 14px; border-radius: 7px; background: #e6f4eb; color: #205c39; }
-        .message.error { background: #f9e2e2; color: #8a2424; }
-        .reports { margin: 0; padding-left: 20px; }
-        .reports li { margin: 8px 0; }
-        .reports a { color: #225f91; font-weight: 650; }
+        .notice, .locked { margin-bottom: 16px; padding: 13px 14px; border-radius: 8px; color: #655419; background: #f6f1df; line-height: 1.45; }
+        .messages { margin-bottom: 16px; }
+        .message { margin-bottom: 8px; padding: 12px 14px; border-radius: 8px; color: #205c39; background: #e6f4eb; }
+        .message.error { color: #8a2424; background: #f9e2e2; }
+        .register { margin-top: 18px; padding: 22px; }
+        .register h2 { margin: 0 0 6px; font-size: 20px; }
+        .register > p { margin: 0 0 16px; color: #687681; line-height: 1.45; }
+        .table-wrap { width: 100%; overflow-x: auto; }
         .report-table { width: 100%; border-collapse: collapse; }
-        .report-table th, .report-table td { padding: 10px 8px; border-bottom: 1px solid #d7dde2; text-align: left; vertical-align: top; }
-        .report-table th { color: #53616b; font-size: 12px; text-transform: uppercase; }
-        .status { display: inline-block; padding: 4px 7px; border-radius: 999px; background: #e7edf1; font-size: 12px; font-weight: 700; }
-        .status.acknowledged { background: #dcefe2; color: #205c39; }
-        .ack-form { display: grid; grid-template-columns: minmax(140px, 0.7fr) minmax(180px, 1fr) auto; gap: 8px; margin-top: 8px; }
+        .report-table th, .report-table td { padding: 11px 9px; border-bottom: 1px solid #dfe5e9; text-align: left; vertical-align: top; }
+        .report-table th { color: #61717c; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+        .ack-form { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(170px, 1fr) auto; gap: 8px; margin-top: 8px; }
         .ack-form input { min-width: 0; }
-        .locked { padding: 14px; border-radius: 7px; background: #f6f1df; color: #655419; }
-        .notice { margin-bottom: 18px; padding: 14px; border-radius: 7px; background: #f6f1df; color: #655419; line-height: 1.45; }
-        .footer { margin-top: 18px; color: #7a858d; font-size: 12px; text-align: center; }
-        @media (max-width: 680px) {
-            .topbar { align-items: flex-start; flex-direction: column-reverse; }
-            .grid { grid-template-columns: 1fr; }
-            .card { padding: 19px; }
-            .report-table { display: block; overflow-x: auto; }
-            .ack-form { grid-template-columns: 1fr; }
+        .recent-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+        .recent-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 7px; background: #f3f6f8; }
+        .footer { margin-top: 22px; color: #7a858d; font-size: 12px; text-align: center; }
+        @media (max-width: 820px) {
+            .hero { grid-template-columns: 1fr; }
+            .workflow-grid, .form-grid { grid-template-columns: 1fr; }
+            .report-table, .report-table tbody, .report-table tr, .report-table td { display: block; width: 100%; }
+            .report-table thead { display: none; }
+            .report-table tr { padding: 14px 0; border-bottom: 1px solid #dfe5e9; }
+            .report-table tr:first-child { padding-top: 0; }
+            .report-table tr:last-child { padding-bottom: 0; border-bottom: 0; }
+            .report-table td { padding: 5px 0; border: 0; }
+            .report-table td::before { display: block; margin-bottom: 4px; color: #61717c; content: attr(data-label); font-size: 11px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+            .ack-form { grid-template-columns: minmax(130px, .7fr) minmax(170px, 1fr) auto; }
         }
+        @media (max-width: 580px) { .shell { padding: 18px 12px 40px; } .topbar { align-items: flex-start; flex-direction: column-reverse; } .hero, .workflow, .register { padding: 19px; } .hero-stats, .date-grid, .delivery-summary { grid-template-columns: 1fr; } .ack-form { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
 <main class="shell">
     <header class="topbar">
-        <div>
-            <h1>{{ plugin_title }}</h1>
-            <div class="subtitle">Replenishment reports made simple</div>
-        </div>
+        <div class="brand"><strong>{{ plugin_title }}</strong><span class="version">Version {{ plugin_version }}</span></div>
         <a class="back" href="/web/">Back to InvenTree</a>
     </header>
 
-    {% if messages %}
-    <div class="messages">
-        {% for message in messages %}
-        <div class="message{% if message.tags %} {{ message.tags }}{% endif %}">{{ message }}</div>
-        {% endfor %}
+    {% if messages %}<div class="messages">{% for message in messages %}<div class="message{% if message.tags %} {{ message.tags }}{% endif %}">{{ message }}</div>{% endfor %}</div>{% endif %}
+
+    <section class="hero">
+        <div><h1>Inventory reporting</h1><p>Generate actionable replenishment reports, track stock entering the business, and confirm that accounting has recorded every delivered period.</p></div>
+        <div class="hero-stats">
+            <div class="hero-stat"><span>Replenishment</span><strong>{% if automation_enabled %}Automatic{% else %}Manual{% endif %}</strong></div>
+            <div class="hero-stat"><span>Accounting pending</span><strong>{{ pending_accounting_count }}</strong></div>
+        </div>
+    </section>
+
+    <div class="section-heading"><div><h2>Report workflows</h2><p>Choose the report you need; its actions and delivery status stay together.</p></div></div>
+
+    <div class="workflow-grid">
+        <section class="card workflow">
+            <div class="workflow-header"><div><div class="eyebrow">Stock planning</div><h3>Replenishment</h3></div><span class="status{% if automation_enabled %} on{% endif %}">{% if automation_enabled %}Every {{ automation_interval_days }} days{% else %}Automatic delivery off{% endif %}</span></div>
+            <p>Highlights critical, reorder, and low-buffer parts using the saved minimum-stock policy.</p>
+            <div class="delivery-summary">
+                <div class="summary-item"><span>Recipient</span><strong>{{ email_recipient|default:"Not configured" }}</strong></div>
+                <div class="summary-item"><span>Schedule</span><strong>{% if automation_enabled %}Every {{ automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
+            </div>
+            <div class="actions">
+                <form method="post">{% csrf_token %}<input type="hidden" name="action" value="generate-report"><button class="button" type="submit">Generate PDF</button></form>
+                {% if is_staff %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="send-report-email"><button class="button secondary" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send test email</button></form>{% endif %}
+            </div>
+        </section>
+
+        <section class="card workflow">
+            <div class="workflow-header"><div><div class="eyebrow">Inventory valuation</div><h3>Stock entries</h3></div><span class="status{% if monthly_stock_report_enabled %} on{% endif %}">{% if monthly_stock_report_enabled %}Day {{ stock_entry_delivery_day }} monthly{% else %}Automatic delivery off{% endif %}</span></div>
+            <p>Captures manual additions, purchase receipts, and completed build output for an auditable date window.</p>
+            <form method="post">
+                {% csrf_token %}<input type="hidden" name="action" value="generate-stock-entry-report">
+                <div class="date-grid">
+                    <div><label for="period-start">Start date</label><input id="period-start" name="period_start" type="date" value="{{ stock_report_default_start }}" required></div>
+                    <div><label for="period-end">End date</label><input id="period-end" name="period_end" type="date" value="{{ stock_report_default_end }}" required></div>
+                </div>
+                <div class="actions"><button class="button" type="submit">Generate PDF</button></div>
+            </form>
+            {% if is_staff %}<div class="actions"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="send-stock-entry-email"><button class="button secondary" type="submit"{% if not email_configured or not stock_entry_email_recipient %} disabled{% endif %}>Send prior month now</button></form></div>{% endif %}
+        </section>
     </div>
-    {% endif %}
 
-    <section class="card">
-        <h2>Generate a report now</h2>
-        <p>Creates the current replenishment PDF using the settings below.</p>
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="generate-report">
-            <button class="primary" type="submit">Generate Replenishment Report</button>
-        </form>
-    </section>
-
-    <section class="card">
-        <h2>Stock entered in a date range</h2>
-        <p>Creates an auditable PDF from manual stock additions, purchase receipts, and completed build output. Returns and stock counts are listed outside this inflow report.</p>
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="generate-stock-entry-report">
-            <div class="grid">
-                <div>
-                    <label for="period-start">Start date</label>
-                    <input id="period-start" name="period_start" type="date" value="{{ stock_report_default_start }}" required>
-                </div>
-                <div>
-                    <label for="period-end">End date</label>
-                    <input id="period-end" name="period_end" type="date" value="{{ stock_report_default_end }}" required>
-                </div>
-            </div>
-            <div style="margin-top: 20px;"><button class="primary" type="submit">Generate Stock Entry Report</button></div>
-        </form>
-        <span class="help">The default window is the complete prior calendar month. Any inclusive window up to one year can be selected.</span>
-    </section>
-
-    <section class="card">
-        <h2>Report settings</h2>
-        <p>These rules apply to both manual and automatic reports.</p>
-        {% if is_staff %}
-        {% if not schedule_integration_enabled %}
-        <div class="notice">Automatic delivery also requires <strong>Plugin Schedule Integration</strong> to be enabled in InvenTree. Enable it and reload the plugins before relying on the schedule.</div>
-        {% endif %}
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="save-settings">
-            <div class="grid">
-                <div>
-                    <label for="default-minimum">Default minimum stock</label>
-                    <input id="default-minimum" name="default_minimum_stock" type="number" min="1" step="1" value="{{ default_minimum_stock }}" required>
-                    <span class="help">Used only when a part has no minimum configured in InvenTree.</span>
-                </div>
-                <div>
-                    <label for="buffer-multiplier">Low-buffer multiplier</label>
-                    <input id="buffer-multiplier" name="low_buffer_multiplier" type="number" min="1" step="0.1" value="{{ low_buffer_multiplier }}" required>
-                    <span class="help">Example: 2 means stock below twice the minimum is low buffer.</span>
-                </div>
-                <div>
-                    <label for="email-recipient">Report recipient</label>
-                    <input id="email-recipient" name="email_recipient" type="email" value="{{ email_recipient }}" placeholder="name@example.com">
-                    <span class="help">The address that receives test and automatic reports.</span>
-                </div>
-                <div>
-                    <label for="email-subject">Email subject</label>
-                    <input id="email-subject" name="email_subject" type="text" value="{{ email_subject }}">
-                    <span class="help">Shown as the subject of each report email.</span>
-                </div>
-                <div>
-                    <label for="report-interval">Automatic report interval</label>
-                    <input id="report-interval" name="automation_interval_days" type="number" min="1" max="365" step="1" value="{{ automation_interval_days }}" required>
-                    <span class="help">Use 7 for a weekly report.</span>
-                </div>
-                <div>
-                    <label>Automatic delivery</label>
-                    <label class="toggle" for="automation-enabled">
-                        <input id="automation-enabled" name="automation_enabled" type="checkbox"{% if automation_enabled %} checked{% endif %}>
-                        Generate and email reports automatically
-                    </label>
-                    <span class="help">The first run is scheduled when these settings are saved.</span>
-                </div>
-                <div>
-                    <label for="stock-entry-subject">Stock-entry email subject</label>
-                    <input id="stock-entry-subject" name="stock_entry_email_subject" type="text" value="{{ stock_entry_email_subject }}">
-                    <span class="help">The month and year are appended automatically.</span>
-                </div>
-                <div>
-                    <label>Monthly stock-entry delivery</label>
-                    <label class="toggle" for="monthly-stock-report-enabled">
-                        <input id="monthly-stock-report-enabled" name="monthly_stock_report_enabled" type="checkbox"{% if monthly_stock_report_enabled %} checked{% endif %}>
-                        Email the prior calendar month on the first day of each month
-                    </label>
-                    <span class="help">Each month is sent at most once and remains pending until somebody records the accounting acknowledgement below.</span>
-                </div>
-            </div>
-            <div style="margin-top: 20px;">
-                <button class="secondary" type="submit">Save Settings</button>
-            </div>
-        </form>
-        {% else %}
-        <div class="locked">An InvenTree administrator can change these shared settings. The report button above is available to everyone.</div>
-        {% endif %}
-    </section>
-
-    <section class="card">
-        <h2>Send a test report</h2>
-        <p>Creates a fresh PDF and emails it to the saved report recipient.</p>
-        {% if is_staff %}
-            {% if not email_configured %}
-            <div class="notice">Outgoing email is not configured in InvenTree yet. Configure the InvenTree email server before sending or scheduling reports.</div>
-            {% elif not email_recipient %}
-            <div class="notice">Enter a report recipient above and save the settings before sending a test.</div>
-            {% endif %}
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="send-report-email">
-            <button class="primary" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send Test Report Now</button>
-        </form>
-        <span class="help">Use this once to confirm the PDF arrives before enabling automatic delivery.</span>
-        <form method="post" style="margin-top: 16px;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="send-stock-entry-email">
-            <button class="secondary" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send Prior Month Stock Entry Report</button>
-        </form>
-        <span class="help">This uses the accounting register and will not send an already delivered month twice.</span>
-        {% else %}
-        <div class="locked">An InvenTree administrator can send report emails.</div>
-        {% endif %}
-    </section>
+    <details class="card settings"{% if not is_staff %} open{% endif %}>
+        <summary>Delivery and report settings</summary>
+        <div class="settings-body">
+            {% if is_staff %}
+                {% if not schedule_integration_enabled %}<div class="notice">Automatic delivery requires <strong>Plugin Schedule Integration</strong> in InvenTree. Enable it and reload plugins before relying on either schedule.</div>{% endif %}
+                {% if not email_configured %}<div class="notice">Outgoing email is not configured in InvenTree. Configure the email server before testing or scheduling delivery.</div>{% endif %}
+                <form method="post">
+                    {% csrf_token %}<input type="hidden" name="action" value="save-settings">
+                    <div class="form-grid">
+                        <section class="settings-section">
+                            <h3>Replenishment report</h3><p>Stock policy and repeating delivery controls.</p>
+                            <div class="form-grid">
+                                <div><label for="default-minimum">Default minimum stock</label><input id="default-minimum" name="default_minimum_stock" type="number" min="1" step="1" value="{{ default_minimum_stock }}" required><span class="help">Used when a part has no minimum configured.</span></div>
+                                <div><label for="buffer-multiplier">Low-buffer multiplier</label><input id="buffer-multiplier" name="low_buffer_multiplier" type="number" min="1" step="0.1" value="{{ low_buffer_multiplier }}" required><span class="help">2 means below twice minimum is low buffer.</span></div>
+                                <div><label for="email-recipient">Recipient</label><input id="email-recipient" name="email_recipient" type="email" value="{{ email_recipient }}" placeholder="name@example.com"></div>
+                                <div><label for="email-subject">Email subject</label><input id="email-subject" name="email_subject" type="text" value="{{ email_subject }}"></div>
+                                <div><label for="report-interval">Delivery interval</label><input id="report-interval" name="automation_interval_days" type="number" min="1" max="365" step="1" value="{{ automation_interval_days }}" required><span class="help">Days between reports; use 7 for weekly.</span></div>
+                                <div><label>Automatic delivery</label><label class="toggle" for="automation-enabled"><input id="automation-enabled" name="automation_enabled" type="checkbox"{% if automation_enabled %} checked{% endif %}>Enable replenishment emails</label></div>
+                            </div>
+                        </section>
+                        <section class="settings-section">
+                            <h3>Stock-entry report</h3><p>Independent recipient, subject, and monthly delivery day.</p>
+                            <div class="form-grid">
+                                <div><label for="stock-entry-recipient">Recipient</label><input id="stock-entry-recipient" name="stock_entry_email_recipient" type="email" value="{{ stock_entry_email_recipient }}" placeholder="name@example.com"><span class="help">Blank falls back to the replenishment recipient.</span></div>
+                                <div><label for="stock-entry-subject">Email subject</label><input id="stock-entry-subject" name="stock_entry_email_subject" type="text" value="{{ stock_entry_email_subject }}"></div>
+                                <div><label for="stock-entry-day">Delivery day of month</label><input id="stock-entry-day" name="stock_entry_delivery_day" type="number" min="1" max="28" step="1" value="{{ stock_entry_delivery_day }}" required><span class="help">Sends the complete prior calendar month at 7:00 a.m.</span></div>
+                                <div><label>Automatic delivery</label><label class="toggle" for="monthly-stock-report-enabled"><input id="monthly-stock-report-enabled" name="monthly_stock_report_enabled" type="checkbox"{% if monthly_stock_report_enabled %} checked{% endif %}>Enable monthly stock-entry emails</label></div>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="actions"><button class="button" type="submit">Save settings</button></div>
+                </form>
+            {% else %}<div class="locked">An InvenTree administrator can change shared reporting and email settings.</div>{% endif %}
+        </div>
+    </details>
 
     {% if stock_report_runs %}
-    <section class="card">
-        <h2>Stock-entry accounting register</h2>
-        <p>This register closes the loop after delivery. Mark a report recorded only after its totals have been entered into the accounting system.</p>
-        <table class="report-table">
+    <section class="card register">
+        <h2>Stock-entry accounting register</h2><p>Mark a report recorded only after its totals have been entered into the accounting system.</p>
+        <div class="table-wrap"><table class="report-table">
             <thead><tr><th>Period</th><th>Delivery</th><th>Accounting</th></tr></thead>
-            <tbody>
-            {% for run in stock_report_runs %}
-            <tr>
-                <td>
-                    <strong>{{ run.period_start }} to {{ run.period_end }}</strong><br>
-                    <span class="help">{{ run.kind }}{% if run.url %} &middot; <a href="{{ run.url }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</span>
-                </td>
-                <td>
-                    <span class="status {{ run.status_code }}">{{ run.status }}</span>
-                    {% if run.sent_at %}<br><span class="help">Sent {{ run.sent_at }}{% if run.recipient %} to {{ run.recipient }}{% endif %}</span>{% endif %}
-                    {% if run.error %}<br><span class="help" style="color:#8a2424">{{ run.error }}</span>{% endif %}
-                </td>
-                <td>
-                    {% if run.acknowledged_at %}
-                    <strong>{{ run.accounting_reference|default:"Recorded" }}</strong><br>
-                    <span class="help">Acknowledged {{ run.acknowledged_at }} by {{ run.acknowledged_by }}{% if run.acknowledgement_notes %}<br>{{ run.acknowledgement_notes }}{% endif %}</span>
-                    {% else %}
-                    <form method="post" class="ack-form">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="acknowledge-stock-report">
-                        <input type="hidden" name="report_run_id" value="{{ run.pk }}">
-                        <input name="accounting_reference" type="text" placeholder="Accounting reference">
-                        <input name="acknowledgement_notes" type="text" placeholder="Notes (optional)">
-                        <button class="secondary" type="submit">Mark Recorded</button>
-                    </form>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
+            <tbody>{% for run in stock_report_runs %}<tr>
+                <td data-label="Period"><strong>{{ run.period_start }} to {{ run.period_end }}</strong><br><span class="help">{{ run.kind }}{% if run.url %} &middot; <a href="{{ run.url }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</span></td>
+                <td data-label="Delivery"><span class="status {{ run.status_code }}">{{ run.status }}</span>{% if run.sent_at %}<br><span class="help">Sent {{ run.sent_at }}{% if run.recipient %} to {{ run.recipient }}{% endif %}</span>{% endif %}{% if run.error %}<br><span class="help" style="color:#8a2424">{{ run.error }}</span>{% endif %}</td>
+                <td data-label="Accounting">{% if run.acknowledged_at %}<strong>{{ run.accounting_reference|default:"Recorded" }}</strong><br><span class="help">Acknowledged {{ run.acknowledged_at }} by {{ run.acknowledged_by }}{% if run.acknowledgement_notes %}<br>{{ run.acknowledgement_notes }}{% endif %}</span>{% else %}<form method="post" class="ack-form">{% csrf_token %}<input type="hidden" name="action" value="acknowledge-stock-report"><input type="hidden" name="report_run_id" value="{{ run.pk }}"><input name="accounting_reference" type="text" placeholder="Accounting reference"><input name="acknowledgement_notes" type="text" placeholder="Notes (optional)"><button class="button secondary" type="submit">Mark recorded</button></form>{% endif %}</td>
+            </tr>{% endfor %}</tbody>
+        </table></div>
     </section>
     {% endif %}
 
     {% if latest_outputs %}
-    <section class="card">
-        <h2>Recent reports</h2>
-        <ul class="reports">
-            {% for output in latest_outputs %}
-            <li>
-                {{ output.created }} &mdash;
-                {% if output.url %}
-                <a href="{{ output.url }}" target="_blank" rel="noopener">Open PDF</a>
-                {% elif output.complete %}
-                Completed
-                {% else %}
-                Generating...
-                {% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-    </section>
+    <section class="card register"><h2>Recent generated files</h2><p>The five most recent report jobs from this plugin.</p><ul class="recent-list">{% for output in latest_outputs %}<li><span>{{ output.created }}</span><span>{% if output.url %}<a href="{{ output.url }}" target="_blank" rel="noopener">Open PDF</a>{% elif output.complete %}Completed{% else %}Generating...{% endif %}</span></li>{% endfor %}</ul></section>
     {% endif %}
 
     <div class="footer">INTERNAL - DiCor Engineering &middot; Inventory Manager {{ plugin_version }}</div>

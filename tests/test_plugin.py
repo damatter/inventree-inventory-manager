@@ -68,7 +68,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.3.2")
         self.assertEqual(plugin_class.MAX_VERSION, "1.3.99")
-        self.assertEqual(plugin_class.VERSION, "0.4.0")
+        self.assertEqual(plugin_class.VERSION, "0.5.0")
 
     def test_unrelated_report_does_not_query_inventory(self) -> None:
         module = import_plugin_module()
@@ -163,7 +163,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(action["title"], "Reporting")
         self.assertEqual(
             action["source"],
-            "/plugin/inventory-manager/reporting.js:openReporting?v=0.4.0",
+            "/plugin/inventory-manager/reporting.js:openReporting?v=0.5.0",
         )
         self.assertEqual(dashboard["title"], "Reporting")
         self.assertEqual(
@@ -180,7 +180,7 @@ class PluginTests(unittest.TestCase):
         )
         self.assertEqual(
             dashboard["source"],
-            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.4.0",
+            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.5.0",
         )
 
     def test_mobile_dashboard_returns_versioned_summary(self) -> None:
@@ -258,6 +258,23 @@ class PluginTests(unittest.TestCase):
         task = plugin.get_scheduled_tasks()["monthly_stock_entry_report"]
         self.assertEqual(task["func"], "run_monthly_stock_entry_report")
         self.assertEqual(task["schedule"], "M")
+
+    def test_stock_entry_delivery_can_use_an_independent_recipient(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        values = {
+            "MONTHLY_STOCK_REPORT_ENABLED": True,
+            "EMAIL_RECIPIENT": "",
+            "STOCK_ENTRY_EMAIL_RECIPIENT": "accounting@example.com",
+            "STOCK_ENTRY_DELIVERY_DAY": 12,
+        }
+        plugin.get_setting = lambda key, **kwargs: values.get(
+            key, kwargs.get("backup_value")
+        )
+
+        self.assertEqual(plugin.stock_entry_email_recipient(), "accounting@example.com")
+        self.assertEqual(plugin.stock_entry_delivery_day(), 12)
+        self.assertIn("monthly_stock_entry_report", plugin.get_scheduled_tasks())
 
     def test_manual_email_uses_saved_recipient_and_subject(self) -> None:
         module = import_plugin_module()
