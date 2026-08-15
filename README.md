@@ -34,13 +34,13 @@ against a parent template's variants is not counted twice.
 Use this pinned source URL in the plugin installer:
 
 ```text
-git+https://github.com/damatter/inventree-inventory-manager.git@0.6.0
+git+https://github.com/damatter/inventree-inventory-manager.git@0.6.1
 ```
 
 The equivalent `plugins.txt` entry is:
 
 ```text
-inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.6.0
+inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.6.1
 ```
 
 Leave the separate version field blank because the Git tag pins the release.
@@ -63,7 +63,7 @@ python -m pip install --editable .
 ```
 
 The package exposes `InventoryManagerPlugin` through the required
-`inventree_plugins` entry-point group. Version 0.6.0 targets InvenTree 1.3.x;
+`inventree_plugins` entry-point group. Version 0.6.1 targets InvenTree 1.3.x;
 the stock-history contract should be reviewed before enabling it on a future
 InvenTree 1.4 release.
 
@@ -113,7 +113,7 @@ models, so the normal `invoke backup`, `invoke restore`, and `invoke update`
 workflows include them. Install the same plugin version before restoring an
 InvenTree database onto another server.
 
-Version 0.4.0 added the `StockEntryReportRun` plugin table. Version 0.6.0 adds a
+Version 0.4.0 added the `StockEntryReportRun` plugin table. Version 0.6.1 adds a
 normal database migration which expands the period key and recipient fields for
 interval reports and multiple recipients. Install the current plugin before
 running `invoke update`; existing run history is retained. Each run stores its
