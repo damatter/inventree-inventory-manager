@@ -10,6 +10,7 @@ from inventory_manager.views import (
     _output_error,
     _output_url,
     _report_status_payload,
+    _require_stock_entry_access,
     _stock_report_window,
     _validate_settings,
     report_status,
@@ -163,6 +164,34 @@ class OutputErrorTests(unittest.TestCase):
 
 
 class ReportStatusPayloadTests(unittest.TestCase):
+    def test_stock_entry_access_fails_closed_when_pricing_denies_user(self) -> None:
+        class PermissionDenied(Exception):
+            pass
+
+        django_package = ModuleType("django")
+        django_core = ModuleType("django.core")
+        django_exceptions = ModuleType("django.core.exceptions")
+        django_exceptions.PermissionDenied = PermissionDenied
+        django_core.exceptions = django_exceptions
+        django_package.core = django_core
+
+        with (
+            patch(
+                "inventory_manager.views.user_can_view_stock_entry_pricing",
+                return_value=False,
+            ),
+            patch.dict(
+                sys.modules,
+                {
+                    "django": django_package,
+                    "django.core": django_core,
+                    "django.core.exceptions": django_exceptions,
+                },
+            ),
+            self.assertRaises(PermissionDenied),
+        ):
+            _require_stock_entry_access(object())
+
     def test_json_accept_detection_is_explicit(self) -> None:
         self.assertTrue(
             _accepts_json(SimpleNamespace(headers={"Accept": "application/json"}))
@@ -257,6 +286,11 @@ class ReportStatusPayloadTests(unittest.TestCase):
         common_models.DataOutput = data_output
         common_package = ModuleType("common")
         common_package.models = common_models
+        stock_run_filter = SimpleNamespace(exists=Mock(return_value=False))
+        inventory_models = ModuleType("inventory_manager.models")
+        inventory_models.StockEntryReportRun = SimpleNamespace(
+            objects=SimpleNamespace(filter=Mock(return_value=stock_run_filter))
+        )
 
         class JsonResponse:
             def __init__(self, data):
@@ -271,6 +305,10 @@ class ReportStatusPayloadTests(unittest.TestCase):
         django_auth = ModuleType("django.contrib.auth")
         django_decorators = ModuleType("django.contrib.auth.decorators")
         django_decorators.login_required = lambda view: view
+        django_core = ModuleType("django.core")
+        django_exceptions = ModuleType("django.core.exceptions")
+        django_exceptions.PermissionDenied = type("PermissionDenied", (Exception,), {})
+        django_core.exceptions = django_exceptions
         django_http = ModuleType("django.http")
         django_http.JsonResponse = JsonResponse
         django_shortcuts = ModuleType("django.shortcuts")
@@ -280,10 +318,13 @@ class ReportStatusPayloadTests(unittest.TestCase):
         modules = {
             "common": common_package,
             "common.models": common_models,
+            "inventory_manager.models": inventory_models,
             "django": django_package,
             "django.contrib": django_contrib,
             "django.contrib.auth": django_auth,
             "django.contrib.auth.decorators": django_decorators,
+            "django.core": django_core,
+            "django.core.exceptions": django_exceptions,
             "django.http": django_http,
             "django.shortcuts": django_shortcuts,
         }
@@ -307,6 +348,9 @@ class ReportStatusPayloadTests(unittest.TestCase):
             pk=11, plugin="inventory-manager"
         )
         self.assertEqual(outputs.filters, [{"user": request.user}])
+        inventory_models.StockEntryReportRun.objects.filter.assert_called_once_with(
+            output_id=11
+        )
 
 
 class ReportGenerationTemplateTests(unittest.TestCase):
@@ -325,6 +369,8 @@ class ReportGenerationTemplateTests(unittest.TestCase):
             'value="generate-stock-entry-report" type="submit" formtarget="_blank"',
             template,
         )
+        self.assertIn("{% if can_view_stock_pricing %}<section", template)
+        self.assertIn("purchase-order and sales-order view roles", template)
 
     def test_status_screen_polls_json_without_meta_refresh(self) -> None:
         template = (

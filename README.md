@@ -111,6 +111,13 @@ also change the replenishment policy and delivery interval, plus the independent
 stock-entry recipients, subject, enabled state, and delivery interval.
 Automatic reports are retained in the Recent Reports list on the same screen.
 
+Because stock-entry exports contain both material costs and customer sale
+prices, those PDF / CSV actions and their accounting register follow Part
+Pricing's existing security boundary. A non-superuser needs membership in the
+configured **Pricing access group** plus both purchase-order and sales-order
+view roles. Replenishment reporting is unchanged. Scheduled stock-entry email
+delivery remains an administrator-configured server task.
+
 Plugin settings and generated report records use InvenTree's own database
 models, so the normal `invoke backup`, `invoke restore`, and `invoke update`
 workflows include them. Install the same plugin version before restoring an

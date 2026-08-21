@@ -29,6 +29,7 @@ from .stock_entries import (
     build_stock_entry_context,
     previous_month_window,
     scheduled_stock_entry_window,
+    user_can_view_stock_entry_pricing,
 )
 
 
@@ -585,6 +586,16 @@ class InventoryManagerPlugin(
         if is_replenishment_report_template(report_instance):
             context.update(build_report_context(policy=self.get_inventory_policy()))
         elif is_stock_entry_report_template(report_instance):
+            request_user = getattr(request, "user", None)
+            if request_user is not None and not user_can_view_stock_entry_pricing(
+                request_user
+            ):
+                from django.core.exceptions import PermissionDenied
+
+                raise PermissionDenied(
+                    "Stock-entry valuation requires Part Pricing report access."
+                )
+
             prepared_context = getattr(
                 request, "inventory_manager_stock_entry_context", None
             )

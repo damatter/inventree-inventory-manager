@@ -158,6 +158,38 @@ class PluginTests(unittest.TestCase):
         build.assert_not_called()
         self.assertEqual(context, prepared)
 
+    def test_stock_entry_report_rejects_users_without_pricing_access(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        report = SimpleNamespace(name="Monthly Stock Entry Report", description="")
+        request = SimpleNamespace(user=object())
+
+        class PermissionDenied(Exception):
+            pass
+
+        django_package = ModuleType("django")
+        django_core = ModuleType("django.core")
+        django_exceptions = ModuleType("django.core.exceptions")
+        django_exceptions.PermissionDenied = PermissionDenied
+        django_core.exceptions = django_exceptions
+        django_package.core = django_core
+
+        with (
+            patch.object(
+                module, "user_can_view_stock_entry_pricing", return_value=False
+            ),
+            patch.dict(
+                sys.modules,
+                {
+                    "django": django_package,
+                    "django.core": django_core,
+                    "django.core.exceptions": django_exceptions,
+                },
+            ),
+            self.assertRaises(PermissionDenied),
+        ):
+            plugin.add_report_context(report, object(), request, {})
+
     def test_control_panel_url_is_root_relative(self) -> None:
         module = import_plugin_module()
         plugin = module.InventoryManagerPlugin()

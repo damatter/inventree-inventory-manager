@@ -21,7 +21,10 @@ from .emailing import (
     queue_stock_entry_test_email,
 )
 from .reports import build_report_context
-from .stock_entries import build_stock_entry_context
+from .stock_entries import (
+    build_stock_entry_context,
+    user_can_view_stock_entry_pricing,
+)
 
 
 def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
@@ -237,6 +240,20 @@ def _accepts_json(request) -> bool:
     ).casefold()
 
 
+def _require_stock_entry_access(user: object) -> None:
+    """Reject user-facing access to combined material and sale-price data."""
+
+    if user_can_view_stock_entry_pricing(user):
+        return
+
+    from django.core.exceptions import PermissionDenied
+
+    raise PermissionDenied(
+        "Stock-entry valuation requires the Part Pricing access group and both "
+        "purchase-order and sales-order view roles."
+    )
+
+
 def reporting_script(request):
     """Serve the small Reporting UI module directly from the plugin package."""
 
@@ -265,11 +282,13 @@ def control_panel(request, plugin):
 
     from django.contrib import messages
     from django.contrib.auth.decorators import login_required
-    from django.core.exceptions import PermissionDenied
+    from django.core.exceptions import PermissionDenied, ValidationError
     from django.shortcuts import redirect, render
 
     @login_required
     def authenticated_view(request):
+        can_view_stock_pricing = user_can_view_stock_entry_pricing(request.user)
+
         if request.method == "POST":
             action = request.POST.get("action")
 
@@ -345,6 +364,7 @@ def control_panel(request, plugin):
                 )
 
             elif action == "generate-stock-entry-report":
+                _require_stock_entry_access(request.user)
                 start, end, error = _stock_report_window(request.POST)
                 if error:
                     if _accepts_json(request):
@@ -368,7 +388,7 @@ def control_panel(request, plugin):
                 else:
                     try:
                         output = generate_stock_entry_report(start, end, request=request)
-                    except ReportSetupError as report_error:
+                    except (ReportSetupError, ValidationError) as report_error:
                         if _accepts_json(request):
                             from django.http import JsonResponse
 
@@ -397,6 +417,7 @@ def control_panel(request, plugin):
                         return redirect(status_url)
 
             elif action == "generate-stock-entry-csv":
+                _require_stock_entry_access(request.user)
                 start, end, error = _stock_report_window(request.POST)
                 if error:
                     messages.error(request, error)
@@ -408,6 +429,7 @@ def control_panel(request, plugin):
                     )
 
             elif action == "acknowledge-stock-report":
+                _require_stock_entry_access(request.user)
                 from django.shortcuts import get_object_or_404
                 from django.utils import timezone
 
@@ -438,57 +460,69 @@ def control_panel(request, plugin):
                 messages.success(request, "The stock-entry report was marked as recorded.")
                 return redirect(plugin.control_panel_url)
 
-        from common.models import DataOutput
-
-        latest_outputs = []
-        for output in DataOutput.objects.filter(plugin=PLUGIN_SLUG).order_by("-pk")[:5]:
-            latest_outputs.append(
-                {
-                    "pk": output.pk,
-                    "created": output.created,
-                    "complete": output.complete,
-                    "url": _output_url(output),
-                }
-            )
-
         from django.utils import timezone
 
         from .models import StockEntryReportRun
         from .stock_entries import previous_month_window
 
-        output_ids = [
+        stock_output_ids = [
             output_id
             for output_id in StockEntryReportRun.objects.exclude(output_id=None).values_list(
                 "output_id", flat=True
-            )[:20]
+            )
         ]
-        output_urls = {
-            output.pk: _output_url(output)
-            for output in DataOutput.objects.filter(pk__in=output_ids)
-        }
-        stock_report_runs = [
+
+        from common.models import DataOutput
+
+        latest_queryset = DataOutput.objects.filter(plugin=PLUGIN_SLUG)
+        if not can_view_stock_pricing:
+            # Older direct-print outputs do not reliably identify their report
+            # subtype. Hide the mixed recent-files list rather than risk
+            # exposing a historical stock valuation after access is revoked.
+            latest_queryset = latest_queryset.none()
+        latest_outputs = [
             {
-                "pk": run.pk,
-                "kind": run.get_kind_display(),
-                "period_start": run.period_start,
-                "period_end": run.period_end,
-                "status": run.get_status_display(),
-                "status_code": run.status,
-                "recipient": run.recipient,
-                "created": run.created,
-                "sent_at": run.sent_at,
-                "url": output_urls.get(run.output_id, ""),
-                "error": run.error,
-                "acknowledged_at": run.acknowledged_at,
-                "acknowledged_by": str(run.acknowledged_by or ""),
-                "accounting_reference": run.accounting_reference,
-                "acknowledgement_notes": run.acknowledgement_notes,
+                "pk": output.pk,
+                "created": output.created,
+                "complete": output.complete,
+                "url": _output_url(output),
             }
-            for run in StockEntryReportRun.objects.select_related("acknowledged_by")[:12]
+            for output in latest_queryset.order_by("-pk")[:5]
         ]
-        pending_accounting_count = StockEntryReportRun.objects.exclude(
-            status=StockEntryReportRun.Status.ACKNOWLEDGED
-        ).exclude(status=StockEntryReportRun.Status.FAILED).count()
+
+        if can_view_stock_pricing:
+            output_urls = {
+                output.pk: _output_url(output)
+                for output in DataOutput.objects.filter(pk__in=stock_output_ids)
+            }
+            stock_report_runs = [
+                {
+                    "pk": run.pk,
+                    "kind": run.get_kind_display(),
+                    "period_start": run.period_start,
+                    "period_end": run.period_end,
+                    "status": run.get_status_display(),
+                    "status_code": run.status,
+                    "recipient": run.recipient,
+                    "created": run.created,
+                    "sent_at": run.sent_at,
+                    "url": output_urls.get(run.output_id, ""),
+                    "error": run.error,
+                    "acknowledged_at": run.acknowledged_at,
+                    "acknowledged_by": str(run.acknowledged_by or ""),
+                    "accounting_reference": run.accounting_reference,
+                    "acknowledgement_notes": run.acknowledgement_notes,
+                }
+                for run in StockEntryReportRun.objects.select_related(
+                    "acknowledged_by"
+                )[:12]
+            ]
+            pending_accounting_count = StockEntryReportRun.objects.exclude(
+                status=StockEntryReportRun.Status.ACKNOWLEDGED
+            ).exclude(status=StockEntryReportRun.Status.FAILED).count()
+        else:
+            stock_report_runs = []
+            pending_accounting_count = None
         default_start, default_end = previous_month_window(timezone.localdate())
 
         try:
@@ -510,6 +544,7 @@ def control_panel(request, plugin):
             "plugin_title": plugin.TITLE,
             "plugin_version": plugin.VERSION,
             "is_staff": request.user.is_staff,
+            "can_view_stock_pricing": can_view_stock_pricing,
             "default_minimum_stock": plugin._setting("DEFAULT_MINIMUM_STOCK", 2),
             "low_buffer_multiplier": plugin._setting("LOW_BUFFER_MULTIPLIER", 2),
             "automation_enabled": plugin.automation_enabled(),
@@ -551,11 +586,22 @@ def report_status(request, plugin, output_id: int):
 
     from common.models import DataOutput
     from django.contrib.auth.decorators import login_required
+    from django.core.exceptions import PermissionDenied
     from django.http import JsonResponse
     from django.shortcuts import get_object_or_404, render
 
     @login_required
     def authenticated_view(request):
+        from .models import StockEntryReportRun
+
+        if (
+            StockEntryReportRun.objects.filter(output_id=output_id).exists()
+            and not user_can_view_stock_entry_pricing(request.user)
+        ):
+            raise PermissionDenied(
+                "You no longer have access to stock-entry valuation reports."
+            )
+
         outputs = DataOutput.objects.filter(pk=output_id, plugin=PLUGIN_SLUG)
         if not request.user.is_staff:
             outputs = outputs.filter(user=request.user)

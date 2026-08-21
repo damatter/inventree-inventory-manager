@@ -182,6 +182,27 @@ def load_customer_pricing_values(part_ids: Iterable[int]) -> dict[int, dict[str,
     return result
 
 
+def user_can_view_stock_entry_pricing(user: object) -> bool:
+    """Apply Customer Pricing's access policy when that API is installed.
+
+    Older or absent companion versions cannot provide monetary values, so the
+    pre-existing stock-history report remains available with blank pricing.
+    Once the pricing API is present, any policy error fails closed.
+    """
+
+    try:
+        from inventree_customer_pricing.reporting import (
+            user_can_view_reporting_values,
+        )
+    except (ImportError, ModuleNotFoundError):
+        return True
+
+    try:
+        return bool(user_can_view_reporting_values(user))
+    except Exception:
+        return False
+
+
 def _decimal_or_none(value: object) -> Decimal | None:
     """Normalize an optional monetary value returned by Customer Pricing."""
 

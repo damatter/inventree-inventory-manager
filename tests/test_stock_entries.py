@@ -13,6 +13,7 @@ from inventory_manager.stock_entries import (
     scheduled_stock_entry_window,
     summarize_stock_entries,
     tracking_quantity,
+    user_can_view_stock_entry_pricing,
 )
 
 
@@ -122,6 +123,47 @@ class StockEntryTests(unittest.TestCase):
 
         self.assertIsNone(values[7]["unit_material_cost"])
         self.assertIn("exchange rate missing", values[7]["error"])
+
+    def test_stock_pricing_access_delegates_to_companion_policy(self) -> None:
+        reporting_module = ModuleType("inventree_customer_pricing.reporting")
+        checked = []
+
+        def user_can_view_reporting_values(user):
+            checked.append(user)
+            return False
+
+        reporting_module.user_can_view_reporting_values = (
+            user_can_view_reporting_values
+        )
+        package = ModuleType("inventree_customer_pricing")
+        package.__path__ = []
+        user = object()
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "inventree_customer_pricing": package,
+                "inventree_customer_pricing.reporting": reporting_module,
+            },
+        ):
+            allowed = user_can_view_stock_entry_pricing(user)
+
+        self.assertFalse(allowed)
+        self.assertEqual(checked, [user])
+
+    def test_stock_history_stays_available_without_pricing_api(self) -> None:
+        reporting_module = ModuleType("inventree_customer_pricing.reporting")
+        package = ModuleType("inventree_customer_pricing")
+        package.__path__ = []
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "inventree_customer_pricing": package,
+                "inventree_customer_pricing.reporting": reporting_module,
+            },
+        ):
+            self.assertTrue(user_can_view_stock_entry_pricing(object()))
 
 
 if __name__ == "__main__":

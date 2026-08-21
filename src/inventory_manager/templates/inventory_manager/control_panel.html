@@ -108,7 +108,7 @@
         <div><h1>Inventory Reporting</h1><p>Generate actionable replenishment reports, track stock entering the business, and confirm that accounting has recorded every delivered period.</p></div>
         <div class="hero-stats">
             <div class="hero-stat"><span>Replenishment</span><strong>{% if automation_enabled %}Automatic{% else %}Manual{% endif %}</strong></div>
-            <div class="hero-stat"><span>Accounting pending</span><strong>{{ pending_accounting_count }}</strong></div>
+            <div class="hero-stat"><span>Accounting pending</span><strong>{% if can_view_stock_pricing %}{{ pending_accounting_count }}{% else %}Restricted{% endif %}</strong></div>
         </div>
     </section>
 
@@ -129,7 +129,7 @@
             </div></form>
         </section>
 
-        <section class="card workflow">
+        {% if can_view_stock_pricing %}<section class="card workflow">
             <div class="workflow-header"><div><div class="eyebrow">Inventory valuation</div><h3>Stock entries</h3></div><span class="status{% if monthly_stock_report_enabled %} on{% endif %}">{{ stock_entry_schedule_status }}</span></div>
             <p>Captures manual additions, purchase receipts, and completed build output for an auditable date window.</p>
             <div class="delivery-summary">
@@ -148,7 +148,12 @@
                     {% if is_staff %}<button class="button secondary" name="action" value="send-stock-entry-email" type="submit"{% if not email_configured or not stock_entry_email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
                 </div>
             </form>
-        </section>
+        </section>{% else %}
+        <section class="card workflow">
+            <div class="workflow-header"><div><div class="eyebrow">Inventory valuation</div><h3>Stock entries</h3></div><span class="status">Restricted</span></div>
+            <p>Stock-entry material and sale-price exports require membership in the Part Pricing access group plus purchase-order and sales-order view roles.</p>
+            <div class="locked">Ask an InvenTree administrator to grant the existing Part Pricing permissions if you need this accounting report.</div>
+        </section>{% endif %}
     </div>
 
     <details class="card settings"{% if not is_staff %} open{% endif %}>
