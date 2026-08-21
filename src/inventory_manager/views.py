@@ -199,6 +199,44 @@ def _output_error(output) -> str:
     return str(errors)
 
 
+def _report_status_payload(output) -> dict[str, object]:
+    """Describe a report job with one browser- and JSON-friendly structure."""
+
+    error = _output_error(output)
+    complete = bool(getattr(output, "complete", False))
+    download_url = _output_url(output) if complete and not error else ""
+
+    if error:
+        state = "error"
+        message = f"Report generation failed: {error}"
+    elif complete and download_url:
+        state = "ready"
+        message = "Your PDF is ready. Opening it now..."
+    elif complete:
+        state = "error"
+        message = "The report completed without a downloadable PDF file."
+    else:
+        state = "pending"
+        message = "InvenTree is generating your PDF. This page checks automatically."
+
+    return {
+        "state": state,
+        "output_id": getattr(output, "pk", None),
+        "progress": getattr(output, "progress", 0) or 0,
+        "total": getattr(output, "total", 0) or 0,
+        "download_url": download_url,
+        "message": message,
+    }
+
+
+def _accepts_json(request) -> bool:
+    """Return whether a browser request explicitly asks for JSON."""
+
+    return "application/json" in str(
+        getattr(request, "headers", {}).get("Accept", "")
+    ).casefold()
+
+
 def reporting_script(request):
     """Serve the small Reporting UI module directly from the plugin package."""
 
@@ -309,11 +347,34 @@ def control_panel(request, plugin):
             elif action == "generate-stock-entry-report":
                 start, end, error = _stock_report_window(request.POST)
                 if error:
+                    if _accepts_json(request):
+                        from django.http import JsonResponse
+
+                        return JsonResponse({"error": error}, status=400)
                     messages.error(request, error)
+                elif not _accepts_json(request) and request.POST.get(
+                    "generation_mode"
+                ) != "direct":
+                    return render(
+                        request,
+                        "inventory_manager/report_launch.html",
+                        {
+                            "plugin_title": plugin.TITLE,
+                            "control_panel_url": plugin.control_panel_url,
+                            "period_start": start.isoformat(),
+                            "period_end": end.isoformat(),
+                        },
+                    )
                 else:
                     try:
                         output = generate_stock_entry_report(start, end, request=request)
                     except ReportSetupError as report_error:
+                        if _accepts_json(request):
+                            from django.http import JsonResponse
+
+                            return JsonResponse(
+                                {"error": str(report_error)}, status=400
+                            )
                         messages.error(request, str(report_error))
                     else:
                         from .models import StockEntryReportRun
@@ -326,9 +387,14 @@ def control_panel(request, plugin):
                             output_id=output.pk,
                             generated_by=request.user,
                         )
-                        return redirect(
-                            f"{plugin.control_panel_url}report/{output.pk}/"
-                        )
+                        status_url = f"{plugin.control_panel_url}report/{output.pk}/"
+                        if _accepts_json(request):
+                            from django.http import JsonResponse
+
+                            return JsonResponse(
+                                {"output_id": output.pk, "status_url": status_url}
+                            )
+                        return redirect(status_url)
 
             elif action == "generate-stock-entry-csv":
                 start, end, error = _stock_report_window(request.POST)
@@ -481,12 +547,12 @@ def control_panel(request, plugin):
 
 
 def report_status(request, plugin, output_id: int):
-    """Wait for a report job, then download it and return to Reporting."""
+    """Show report progress and expose a small authenticated polling response."""
 
     from common.models import DataOutput
-    from django.contrib import messages
     from django.contrib.auth.decorators import login_required
-    from django.shortcuts import get_object_or_404, redirect, render
+    from django.http import JsonResponse
+    from django.shortcuts import get_object_or_404, render
 
     @login_required
     def authenticated_view(request):
@@ -495,27 +561,26 @@ def report_status(request, plugin, output_id: int):
             outputs = outputs.filter(user=request.user)
 
         output = get_object_or_404(outputs)
+        payload = _report_status_payload(output)
 
-        if error := _output_error(output):
-            messages.error(request, f"Report generation failed: {error}")
-            return redirect(plugin.control_panel_url)
+        if request.GET.get("format") == "json" or _accepts_json(request):
+            response = JsonResponse(payload)
+            response["Cache-Control"] = "no-store"
+            return response
 
-        if output.complete:
-            if url := _output_url(output):
-                return redirect(url)
-            messages.error(request, "The report completed without a downloadable file.")
-            return redirect(plugin.control_panel_url)
-
-        return render(
+        response = render(
             request,
             "inventory_manager/report_status.html",
             {
                 "plugin_title": plugin.TITLE,
-                "output_id": output.pk,
-                "progress": output.progress,
-                "total": output.total,
+                **payload,
                 "control_panel_url": plugin.control_panel_url,
+                "status_json_url": (
+                    f"{plugin.control_panel_url}report/{output.pk}/?format=json"
+                ),
             },
         )
+        response["Cache-Control"] = "no-store"
+        return response
 
     return authenticated_view(request)

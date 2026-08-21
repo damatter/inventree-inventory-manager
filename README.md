@@ -34,13 +34,13 @@ against a parent template's variants is not counted twice.
 Use this pinned source URL in the plugin installer:
 
 ```text
-git+https://github.com/damatter/inventree-inventory-manager.git@0.6.1
+git+https://github.com/damatter/inventree-inventory-manager.git@0.7.0
 ```
 
 The equivalent `plugins.txt` entry is:
 
 ```text
-inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.6.1
+inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.7.0
 ```
 
 Leave the separate version field blank because the Git tag pins the release.
@@ -63,7 +63,7 @@ python -m pip install --editable .
 ```
 
 The package exposes `InventoryManagerPlugin` through the required
-`inventree_plugins` entry-point group. Version 0.6.1 targets InvenTree 1.3.x;
+`inventree_plugins` entry-point group. Version 0.7.0 targets InvenTree 1.3.x;
 the stock-history contract should be reviewed before enabling it on a future
 InvenTree 1.4 release.
 
@@ -92,9 +92,12 @@ Create a second report template targeting the **Part** model for stock inflows:
 
 The stock-entry report uses InvenTree's dated stock-history records for manual
 stock-item creation, manual additions, purchase-order receipts, and completed
-build output. It deliberately excludes returns and stock counts. Stored StockItem
-purchase prices provide valuation where available; currencies remain separate and
-events without a value are explicitly counted for review.
+build output. It deliberately excludes returns and stock counts. Install **Part
+Pricing 0.6.1 or newer** before Inventory Manager 0.7.0. Material value is the
+active material cost per unit multiplied by the quantity entered; lowest and
+highest sale prices come from the actual active customer price breaks. The
+companion plugin converts all figures to InvenTree's default currency. Missing
+pricing or exchange rates leave explicit blanks instead of failing the report.
 
 ## Inventory Manager screen
 
@@ -119,6 +122,12 @@ interval reports and multiple recipients. Install the current plugin before
 running `invoke update`; existing run history is retained. Each run stores its
 period, PDF job, recipient, delivery state, error, and optional accounting
 acknowledgement.
+
+Version 0.7.0 replaces StockItem purchase-price valuation with Part Pricing's
+batched material and customer-price snapshot. It also gives both PDF workflows
+a shared pending / ready / error screen. The stock-entry workflow displays its
+progress page before starting the synchronous InvenTree 1.3.x renderer, so long
+reports no longer leave an unexplained blank tab.
 
 ## Automatic email reporting
 

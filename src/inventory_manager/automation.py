@@ -136,7 +136,7 @@ def generate_replenishment_report():
     return _tag_output(output)
 
 
-def generate_stock_entry_report(start, end, request=None):
+def generate_stock_entry_report(start, end, request=None, context=None):
     """Synchronously generate a stock-entry PDF for an explicit date window."""
 
     template = find_stock_entry_template()
@@ -146,8 +146,14 @@ def generate_stock_entry_report(start, end, request=None):
     report_request = request or SimpleNamespace(user=None)
     report_request.inventory_manager_period_start = start
     report_request.inventory_manager_period_end = end
+    if context is None:
+        from .stock_entries import build_stock_entry_context
+
+        context = build_stock_entry_context(start, end)
+    report_request.inventory_manager_stock_entry_context = context
 
     output = template.print([anchor], request=report_request)
     if output is None:
         raise ReportSetupError("The stock-entry report did not produce an output.")
+    output.inventory_manager_stock_entry_context = context
     return _tag_output(output)

@@ -68,7 +68,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(plugin_class.AUTHOR, "Matt Dick")
         self.assertEqual(plugin_class.MIN_VERSION, "1.3.2")
         self.assertEqual(plugin_class.MAX_VERSION, "1.3.99")
-        self.assertEqual(plugin_class.VERSION, "0.6.1")
+        self.assertEqual(plugin_class.VERSION, "0.7.0")
         from inventory_manager import __version__
 
         self.assertEqual(__version__, plugin_class.VERSION)
@@ -144,6 +144,20 @@ class PluginTests(unittest.TestCase):
         build.assert_called_once_with("2026-07-01", "2026-07-31")
         self.assertEqual(context["event_count"], 4)
 
+    def test_stock_entry_report_reuses_prepared_context(self) -> None:
+        module = import_plugin_module()
+        plugin = module.InventoryManagerPlugin()
+        report = SimpleNamespace(name="Monthly Stock Entry Report", description="")
+        prepared = {"stock_entry_items": [{"part_id": 7}]}
+        request = SimpleNamespace(inventory_manager_stock_entry_context=prepared)
+        context = {}
+
+        with patch.object(module, "build_stock_entry_context") as build:
+            plugin.add_report_context(report, object(), request, context)
+
+        build.assert_not_called()
+        self.assertEqual(context, prepared)
+
     def test_control_panel_url_is_root_relative(self) -> None:
         module = import_plugin_module()
         plugin = module.InventoryManagerPlugin()
@@ -166,7 +180,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(action["title"], "Reporting")
         self.assertEqual(
             action["source"],
-            "/plugin/inventory-manager/reporting.js:openReporting?v=0.6.1",
+            "/plugin/inventory-manager/reporting.js:openReporting?v=0.7.0",
         )
         self.assertEqual(dashboard["title"], "Reporting")
         self.assertEqual(
@@ -183,7 +197,7 @@ class PluginTests(unittest.TestCase):
         )
         self.assertEqual(
             dashboard["source"],
-            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.6.1",
+            "/plugin/inventory-manager/reporting.js:renderReportingShortcut?v=0.7.0",
         )
 
     def test_mobile_dashboard_returns_versioned_summary(self) -> None:

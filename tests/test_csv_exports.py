@@ -47,13 +47,13 @@ class CsvExportTests(unittest.TestCase):
                         "entered_at": datetime(2026, 8, 1, 12, 30),
                         "part_id": 7,
                         "part_name": "106868 DC",
-                        "source": "Manual stock item created",
                         "quantity": Decimal("24"),
                         "unit_value": Decimal("2.50"),
-                        "currency": "CAD",
                         "total_value": Decimal("60.00"),
+                        "lowest_sale_price": Decimal("4.00"),
+                        "highest_sale_price": Decimal("5.50"),
+                        "currency": "CAD",
                         "location": "Warehouse/G08-b",
-                        "user_name": "DiCor Engineering",
                         "notes": "",
                     }
                 ]
@@ -62,8 +62,20 @@ class CsvExportTests(unittest.TestCase):
 
         parsed = rows(content)
         self.assertEqual(parsed[0][0:4], ["Event ID", "Entered At", "Part ID", "Part"])
+        self.assertNotIn("Source", parsed[0])
+        self.assertNotIn("User", parsed[0])
         self.assertEqual(parsed[1][3], "106868 DC")
-        self.assertEqual(parsed[1][7:9], ["CAD", "60.00"])
+        self.assertEqual(
+            parsed[0][5:10],
+            [
+                "Unit Material Cost",
+                "Material Value",
+                "Lowest Sale Price",
+                "Highest Sale Price",
+                "Currency",
+            ],
+        )
+        self.assertEqual(parsed[1][5:10], ["2.50", "60.00", "4.00", "5.50", "CAD"])
 
 
 if __name__ == "__main__":

@@ -123,7 +123,7 @@
                 <div class="summary-item"><span>Schedule</span><strong>{% if automation_enabled %}Every {{ automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
             </div>
             <form method="post" class="workflow-form">{% csrf_token %}<div class="actions workflow-actions">
-                <button class="button" name="action" value="generate-report" type="submit">Generate PDF</button>
+                <button class="button" name="action" value="generate-report" type="submit" formtarget="_blank">Generate PDF</button>
                 <button class="button secondary" name="action" value="generate-report-csv" type="submit">Generate CSV</button>
                 {% if is_staff %}<button class="button secondary" name="action" value="send-report-email" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
             </div></form>
@@ -143,7 +143,7 @@
                     <div><label for="period-end">End date</label><input id="period-end" name="period_end" type="date" value="{{ stock_report_default_end }}" required></div>
                 </div>
                 <div class="actions workflow-actions">
-                    <button class="button" name="action" value="generate-stock-entry-report" type="submit">Generate PDF</button>
+                    <button class="button" name="action" value="generate-stock-entry-report" type="submit" formtarget="_blank">Generate PDF</button>
                     <button class="button secondary" name="action" value="generate-stock-entry-csv" type="submit">Generate CSV</button>
                     {% if is_staff %}<button class="button secondary" name="action" value="send-stock-entry-email" type="submit"{% if not email_configured or not stock_entry_email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
                 </div>
@@ -182,7 +182,7 @@
                             <h3>Replenishment stock policy</h3><p>Controls which parts appear in the replenishment report.</p>
                             <div class="form-grid">
                                 <div><label for="default-minimum">Default minimum stock</label><input id="default-minimum" name="default_minimum_stock" type="number" min="1" step="1" value="{{ default_minimum_stock }}" required><span class="help">Used when a part has no minimum configured.</span></div>
-                                <div><label for="buffer-multiplier">Low-buffer multiplier</label><input id="buffer-multiplier" name="low_buffer_multiplier" type="number" min="1" step="0.1" value="{{ low_buffer_multiplier }}" required><span class="help">2 means below twice minimum is low buffer.</span></div>
+                                <div><label for="buffer-multiplier">Low-buffer multiplier</label><input id="buffer-multiplier" name="low_buffer_multiplier" type="number" min="1" step="0.1" value="{{ low_buffer_multiplier }}" required><span class="help">Parts below the saved multiple of minimum stock are low buffer.</span></div>
                             </div>
                         </section>
                     </div>

@@ -3,8 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="refresh" content="2">
-    <title>Generating Report</title>
+    <title>{% if state == "ready" %}Report Ready{% elif state == "error" %}Report Error{% else %}Generating Report{% endif %}</title>
     <style>
         :root {
             font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -14,26 +13,186 @@
         * { box-sizing: border-box; }
         body { margin: 0; }
         .shell { display: grid; min-height: 100vh; padding: 20px; place-items: center; }
-        .card { width: min(560px, 100%); padding: 34px; border: 1px solid #d7dde2; border-radius: 12px; background: white; box-shadow: 0 3px 14px rgb(35 52 66 / 9%); text-align: center; }
-        .spinner { width: 42px; height: 42px; margin: 0 auto 20px; border: 5px solid #dce6df; border-top-color: #26734d; border-radius: 50%; animation: spin 0.9s linear infinite; }
-        h1 { margin: 0 0 10px; font-size: 25px; }
+        .card { width: min(600px, 100%); padding: 36px; border: 1px solid #d7dde2; border-radius: 12px; background: white; box-shadow: 0 3px 14px rgb(35 52 66 / 9%); text-align: center; }
+        .spinner { width: 46px; height: 46px; margin: 0 auto 20px; border: 5px solid #dce6df; border-top-color: #26734d; border-radius: 50%; animation: spin .9s linear infinite; }
+        .status-icon { display: grid; width: 50px; height: 50px; margin: 0 auto 20px; border-radius: 50%; color: #fff; font-size: 29px; font-weight: 800; place-items: center; }
+        .status-icon.ready { background: #26734d; }
+        .status-icon.error { background: #a32f2f; }
+        h1 { margin: 0 0 10px; font-size: 26px; }
         p { margin: 0 0 18px; color: #687681; line-height: 1.5; }
-        a { color: #344b5e; font-weight: 700; }
+        .progress { margin-top: -5px; font-size: 14px; }
+        .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 22px; }
+        .button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 10px 18px; border: 0; border-radius: 8px; color: #fff; background: #176b78; font-weight: 750; text-decoration: none; }
+        .button:hover { background: #125d69; }
+        .button.secondary { color: #263f51; background: #e5ebef; }
+        .button.secondary:hover { background: #d7e0e5; }
+        .job { margin-top: 20px; color: #8a959d; font-size: 12px; }
+        [hidden] { display: none !important; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 500px) { .card { padding: 28px 20px; } .actions { flex-direction: column; } }
     </style>
 </head>
 <body>
-<main class="shell">
-    <section class="card">
-        <div class="spinner" aria-hidden="true"></div>
-        <h1>Generating your report</h1>
-        <p>
-            InvenTree is processing report job {{ output_id }}.
-            This page checks automatically and will open the PDF when it is ready.
-        </p>
-        {% if total %}<p>Progress: {{ progress }} of {{ total }}</p>{% endif %}
-        <a href="{{ control_panel_url }}">Return to Inventory Manager</a>
+<main
+    id="report-status"
+    class="shell"
+    data-state="{{ state }}"
+    data-output-id="{{ output_id }}"
+    data-status-url="{{ status_json_url }}"
+>
+    <section class="card" aria-live="polite">
+        <div id="spinner" class="spinner" aria-hidden="true"{% if state != "pending" %} hidden{% endif %}></div>
+        <div id="ready-icon" class="status-icon ready" aria-hidden="true"{% if state != "ready" %} hidden{% endif %}>&#10003;</div>
+        <div id="error-icon" class="status-icon error" aria-hidden="true"{% if state != "error" %} hidden{% endif %}>!</div>
+        <h1 id="status-title">
+            {% if state == "ready" %}Your report is ready
+            {% elif state == "error" %}Report could not be generated
+            {% else %}Generating your report{% endif %}
+        </h1>
+        <p id="status-message">{{ message }}</p>
+        <p id="progress" class="progress"{% if not total or state != "pending" %} hidden{% endif %}>Progress: {{ progress }} of {{ total }}</p>
+
+        <div class="actions">
+            <a id="open-pdf" class="button" href="{{ download_url }}"{% if state != "ready" %} hidden{% endif %}>Open PDF</a>
+            <a class="button secondary" href="{{ control_panel_url }}">Return to Reporting</a>
+            <a id="check-status" class="button secondary" href="">Check status</a>
+        </div>
+        <p class="job">Report job {{ output_id }}</p>
+        <noscript><p>Automatic status checking requires JavaScript. Use <strong>Check status</strong> to refresh this page.</p></noscript>
     </section>
 </main>
+<script>
+    (function () {
+        "use strict";
+
+        var root = document.getElementById("report-status");
+        var spinner = document.getElementById("spinner");
+        var readyIcon = document.getElementById("ready-icon");
+        var errorIcon = document.getElementById("error-icon");
+        var title = document.getElementById("status-title");
+        var message = document.getElementById("status-message");
+        var progress = document.getElementById("progress");
+        var openPdf = document.getElementById("open-pdf");
+        var statusUrl = root.dataset.statusUrl;
+        var outputId = root.dataset.outputId;
+        var polls = 0;
+        var maxPolls = 300;
+        var openedKey = "inventory-manager-report-opened-" + outputId;
+
+        function setVisible(element, visible) {
+            element.hidden = !visible;
+        }
+
+        function alreadyOpened() {
+            try {
+                return window.sessionStorage.getItem(openedKey) === "yes";
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function rememberOpened() {
+            try {
+                window.sessionStorage.setItem(openedKey, "yes");
+            } catch (error) {
+                // The PDF can still open when private browsing blocks storage.
+            }
+        }
+
+        function showReady(data) {
+            setVisible(spinner, false);
+            setVisible(errorIcon, false);
+            setVisible(readyIcon, true);
+            setVisible(progress, false);
+            setVisible(openPdf, true);
+            title.textContent = "Your report is ready";
+            message.textContent = data.message || "Your PDF is ready. Opening it now...";
+            openPdf.href = data.download_url;
+            document.title = "Report Ready";
+
+            if (data.download_url && !alreadyOpened()) {
+                rememberOpened();
+                window.setTimeout(function () {
+                    window.location.assign(data.download_url);
+                }, 900);
+            }
+        }
+
+        function showError(data) {
+            setVisible(spinner, false);
+            setVisible(readyIcon, false);
+            setVisible(errorIcon, true);
+            setVisible(progress, false);
+            setVisible(openPdf, false);
+            title.textContent = "Report could not be generated";
+            message.textContent = data.message || "InvenTree could not generate this report.";
+            document.title = "Report Error";
+        }
+
+        function showPending(data) {
+            setVisible(spinner, true);
+            setVisible(readyIcon, false);
+            setVisible(errorIcon, false);
+            setVisible(openPdf, false);
+            title.textContent = "Generating your report";
+            message.textContent = data.message || "InvenTree is generating your PDF. This page checks automatically.";
+            if (data.total) {
+                progress.textContent = "Progress: " + data.progress + " of " + data.total;
+                setVisible(progress, true);
+            } else {
+                setVisible(progress, false);
+            }
+        }
+
+        function applyStatus(data) {
+            if (data.state === "ready") {
+                showReady(data);
+                return false;
+            }
+            if (data.state === "error") {
+                showError(data);
+                return false;
+            }
+            showPending(data);
+            return true;
+        }
+
+        function poll() {
+            if (polls >= maxPolls) {
+                setVisible(spinner, false);
+                title.textContent = "This report is taking longer than expected";
+                message.textContent = "Use Check status to try again, or return to Reporting and review Recent generated files.";
+                return;
+            }
+            polls += 1;
+            window.fetch(statusUrl, {
+                credentials: "same-origin",
+                cache: "no-store",
+                headers: {"Accept": "application/json"}
+            }).then(function (response) {
+                if (!response.ok) {
+                    throw new Error("Status request failed");
+                }
+                return response.json();
+            }).then(function (data) {
+                if (applyStatus(data)) {
+                    window.setTimeout(poll, 2000);
+                }
+            }).catch(function () {
+                message.textContent = "Connection interrupted. Retrying the report status...";
+                window.setTimeout(poll, 3000);
+            });
+        }
+
+        if (root.dataset.state === "ready") {
+            showReady({
+                message: message.textContent,
+                download_url: openPdf.href
+            });
+        } else if (root.dataset.state === "pending") {
+            window.setTimeout(poll, 1000);
+        }
+    }());
+</script>
 </body>
 </html>

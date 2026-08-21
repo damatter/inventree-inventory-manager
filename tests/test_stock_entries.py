@@ -1,11 +1,14 @@
 import unittest
 from datetime import date, datetime
 from decimal import Decimal
+from types import ModuleType
+from unittest.mock import patch
 
 from inventory_manager.stock_entries import (
     CREATED,
     STOCK_ADD,
     StockEntry,
+    load_customer_pricing_values,
     previous_month_window,
     scheduled_stock_entry_window,
     summarize_stock_entries,
@@ -63,6 +66,62 @@ class StockEntryTests(unittest.TestCase):
         self.assertEqual(summary["total_quantity"], Decimal("6"))
         self.assertEqual(summary["valuation_totals"], [{"currency": "CAD", "total": Decimal("6")}])
         self.assertEqual(summary["unvalued_count"], 1)
+
+    def test_customer_pricing_loader_batches_unique_parts(self) -> None:
+        calls = []
+
+        class Value:
+            currency = "CAD"
+            unit_material_cost = Decimal("12.50")
+            lowest_sale_price = Decimal("20")
+            highest_sale_price = Decimal("30")
+            error = None
+
+        reporting_module = ModuleType("inventree_customer_pricing.reporting")
+
+        def reporting_values_for_parts(part_ids):
+            calls.append(tuple(part_ids))
+            return {7: Value(), 8: Value()}
+
+        reporting_module.reporting_values_for_parts = reporting_values_for_parts
+        package = ModuleType("inventree_customer_pricing")
+        package.__path__ = []
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "inventree_customer_pricing": package,
+                "inventree_customer_pricing.reporting": reporting_module,
+            },
+        ):
+            values = load_customer_pricing_values([7, 7, 8])
+
+        self.assertEqual(calls, [(7, 8)])
+        self.assertEqual(values[7]["unit_material_cost"], Decimal("12.50"))
+        self.assertEqual(values[7]["lowest_sale_price"], Decimal("20"))
+        self.assertEqual(values[7]["highest_sale_price"], Decimal("30"))
+
+    def test_customer_pricing_loader_fails_closed(self) -> None:
+        reporting_module = ModuleType("inventree_customer_pricing.reporting")
+
+        def reporting_values_for_parts(_part_ids):
+            raise RuntimeError("exchange rate missing")
+
+        reporting_module.reporting_values_for_parts = reporting_values_for_parts
+        package = ModuleType("inventree_customer_pricing")
+        package.__path__ = []
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "inventree_customer_pricing": package,
+                "inventree_customer_pricing.reporting": reporting_module,
+            },
+        ):
+            values = load_customer_pricing_values([7])
+
+        self.assertIsNone(values[7]["unit_material_cost"])
+        self.assertIn("exchange rate missing", values[7]["error"])
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.6.1"
+    VERSION = "0.7.0"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.3.2"
     MAX_VERSION = "1.3.99"
@@ -302,7 +302,7 @@ class InventoryManagerPlugin(
             timezone.localdate(), self.stock_entry_automation_interval_days()
         )
         context = build_stock_entry_context(start, end)
-        output = generate_stock_entry_report(start, end)
+        output = generate_stock_entry_report(start, end, context=context)
         send_stock_entry_report_email(
             output,
             recipient,
@@ -361,7 +361,8 @@ class InventoryManagerPlugin(
             return run
 
         try:
-            output = generate_stock_entry_report(start, end)
+            stock_context = build_stock_entry_context(start, end)
+            output = generate_stock_entry_report(start, end, context=stock_context)
             run.output_id = output.pk
             run.status = StockEntryReportRun.Status.GENERATED
             run.error = ""
@@ -372,7 +373,7 @@ class InventoryManagerPlugin(
                 start,
                 end,
                 self.stock_entry_email_subject(),
-                stock_entry_csv(build_stock_entry_context(start, end)),
+                stock_entry_csv(stock_context),
             )
             run.status = StockEntryReportRun.Status.EMAILED
             run.sent_at = timezone.now()
@@ -584,8 +585,14 @@ class InventoryManagerPlugin(
         if is_replenishment_report_template(report_instance):
             context.update(build_report_context(policy=self.get_inventory_policy()))
         elif is_stock_entry_report_template(report_instance):
-            start = getattr(request, "inventory_manager_period_start", None)
-            end = getattr(request, "inventory_manager_period_end", None)
-            if start is None or end is None:
-                start, end = previous_month_window()
-            context.update(build_stock_entry_context(start, end))
+            prepared_context = getattr(
+                request, "inventory_manager_stock_entry_context", None
+            )
+            if prepared_context is not None:
+                context.update(prepared_context)
+            else:
+                start = getattr(request, "inventory_manager_period_start", None)
+                end = getattr(request, "inventory_manager_period_end", None)
+                if start is None or end is None:
+                    start, end = previous_month_window()
+                context.update(build_stock_entry_context(start, end))

@@ -113,6 +113,29 @@ class AutomationTests(unittest.TestCase):
         self.assertEqual(output.plugin, "inventory-manager")
         output.save.assert_called_once_with(update_fields=["plugin"])
 
+    def test_stock_entry_report_reuses_one_pricing_context(self) -> None:
+        output = SimpleNamespace(plugin=None, save=Mock())
+        anchor = SimpleNamespace(pk=6)
+        template = SimpleNamespace(print=Mock(return_value=output))
+        request = SimpleNamespace(user=None)
+        prepared = {"stock_entry_items": [{"part_id": 7}]}
+
+        with (
+            patch.object(automation, "find_stock_entry_template", return_value=template),
+            patch.object(automation, "report_anchor", return_value=anchor),
+        ):
+            result = automation.generate_stock_entry_report(
+                "2026-08-01",
+                "2026-08-21",
+                request=request,
+                context=prepared,
+            )
+
+        self.assertIs(result, output)
+        self.assertIs(request.inventory_manager_stock_entry_context, prepared)
+        self.assertIs(output.inventory_manager_stock_entry_context, prepared)
+        template.print.assert_called_once_with([anchor], request=request)
+
 
 if __name__ == "__main__":
     unittest.main()

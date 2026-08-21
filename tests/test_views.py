@@ -1,12 +1,18 @@
+import sys
 import unittest
 from decimal import Decimal
-from types import SimpleNamespace
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock, patch
 
 from inventory_manager.views import (
+    _accepts_json,
     _output_error,
     _output_url,
+    _report_status_payload,
     _stock_report_window,
     _validate_settings,
+    report_status,
 )
 
 
@@ -154,6 +160,202 @@ class OutputErrorTests(unittest.TestCase):
         output = type("Output", (), {"errors": None})()
 
         self.assertEqual(_output_error(output), "")
+
+
+class ReportStatusPayloadTests(unittest.TestCase):
+    def test_json_accept_detection_is_explicit(self) -> None:
+        self.assertTrue(
+            _accepts_json(SimpleNamespace(headers={"Accept": "application/json"}))
+        )
+        self.assertFalse(_accepts_json(SimpleNamespace(headers={"Accept": "text/html"})))
+
+    def test_pending_job_reports_progress_without_exposing_file(self) -> None:
+        output = SimpleNamespace(
+            pk=7,
+            complete=False,
+            progress=2,
+            total=5,
+            errors=None,
+            output=SimpleNamespace(url="media/unfinished.pdf"),
+        )
+
+        payload = _report_status_payload(output)
+
+        self.assertEqual(payload["state"], "pending")
+        self.assertEqual(payload["progress"], 2)
+        self.assertEqual(payload["total"], 5)
+        self.assertEqual(payload["download_url"], "")
+
+    def test_complete_job_has_root_relative_pdf_url(self) -> None:
+        output = SimpleNamespace(
+            pk=8,
+            complete=True,
+            progress=1,
+            total=1,
+            errors=None,
+            output=SimpleNamespace(url="media/ready.pdf"),
+        )
+
+        payload = _report_status_payload(output)
+
+        self.assertEqual(payload["state"], "ready")
+        self.assertEqual(payload["download_url"], "/media/ready.pdf")
+
+    def test_worker_error_is_terminal_and_readable(self) -> None:
+        output = SimpleNamespace(
+            pk=9,
+            complete=False,
+            progress=0,
+            total=0,
+            errors={"error": "PDF renderer failed"},
+            output=None,
+        )
+
+        payload = _report_status_payload(output)
+
+        self.assertEqual(payload["state"], "error")
+        self.assertIn("PDF renderer failed", payload["message"])
+
+    def test_complete_job_without_file_is_an_error(self) -> None:
+        output = SimpleNamespace(
+            pk=10,
+            complete=True,
+            progress=1,
+            total=1,
+            errors=None,
+            output=None,
+        )
+
+        payload = _report_status_payload(output)
+
+        self.assertEqual(payload["state"], "error")
+        self.assertIn("without a downloadable PDF", payload["message"])
+
+    def test_status_route_returns_authenticated_json(self) -> None:
+        output = SimpleNamespace(
+            pk=11,
+            complete=True,
+            progress=1,
+            total=1,
+            errors=None,
+            output=SimpleNamespace(url="media/stock-entry.pdf"),
+        )
+
+        class FakeQuerySet:
+            def __init__(self):
+                self.filters = []
+
+            def filter(self, **kwargs):
+                self.filters.append(kwargs)
+                return self
+
+        outputs = FakeQuerySet()
+        data_output = SimpleNamespace(
+            objects=SimpleNamespace(filter=Mock(return_value=outputs))
+        )
+        common_models = ModuleType("common.models")
+        common_models.DataOutput = data_output
+        common_package = ModuleType("common")
+        common_package.models = common_models
+
+        class JsonResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = {}
+
+            def __setitem__(self, key, value):
+                self.headers[key] = value
+
+        django_package = ModuleType("django")
+        django_contrib = ModuleType("django.contrib")
+        django_auth = ModuleType("django.contrib.auth")
+        django_decorators = ModuleType("django.contrib.auth.decorators")
+        django_decorators.login_required = lambda view: view
+        django_http = ModuleType("django.http")
+        django_http.JsonResponse = JsonResponse
+        django_shortcuts = ModuleType("django.shortcuts")
+        django_shortcuts.get_object_or_404 = lambda queryset: output
+        django_shortcuts.render = Mock()
+
+        modules = {
+            "common": common_package,
+            "common.models": common_models,
+            "django": django_package,
+            "django.contrib": django_contrib,
+            "django.contrib.auth": django_auth,
+            "django.contrib.auth.decorators": django_decorators,
+            "django.http": django_http,
+            "django.shortcuts": django_shortcuts,
+        }
+        request = SimpleNamespace(
+            GET={"format": "json"},
+            headers={},
+            user=SimpleNamespace(is_staff=False),
+        )
+        plugin = SimpleNamespace(
+            TITLE="Inventory Manager",
+            control_panel_url="/plugin/inventory-manager/",
+        )
+
+        with patch.dict(sys.modules, modules):
+            response = report_status(request, plugin, output.pk)
+
+        self.assertEqual(response.data["state"], "ready")
+        self.assertEqual(response.data["download_url"], "/media/stock-entry.pdf")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        data_output.objects.filter.assert_called_once_with(
+            pk=11, plugin="inventory-manager"
+        )
+        self.assertEqual(outputs.filters, [{"user": request.user}])
+
+
+class ReportGenerationTemplateTests(unittest.TestCase):
+    def test_both_pdf_actions_open_the_shared_status_flow_in_a_new_tab(self) -> None:
+        template = (
+            Path(__file__).parents[1]
+            / "src"
+            / "inventory_manager"
+            / "templates"
+            / "inventory_manager"
+            / "control_panel.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('value="generate-report" type="submit" formtarget="_blank"', template)
+        self.assertIn(
+            'value="generate-stock-entry-report" type="submit" formtarget="_blank"',
+            template,
+        )
+
+    def test_status_screen_polls_json_without_meta_refresh(self) -> None:
+        template = (
+            Path(__file__).parents[1]
+            / "src"
+            / "inventory_manager"
+            / "templates"
+            / "inventory_manager"
+            / "report_status.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('headers: {"Accept": "application/json"}', template)
+        self.assertIn('id="open-pdf"', template)
+        self.assertIn("Return to Reporting", template)
+        self.assertNotIn('http-equiv="refresh"', template)
+
+    def test_stock_entry_launch_screen_starts_background_generation(self) -> None:
+        template = (
+            Path(__file__).parents[1]
+            / "src"
+            / "inventory_manager"
+            / "templates"
+            / "inventory_manager"
+            / "report_launch.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('name="action" value="generate-stock-entry-report"', template)
+        self.assertIn('headers: {"Accept": "application/json"}', template)
+        self.assertIn("new FormData(form)", template)
+        self.assertIn("window.location.assign(data.status_url)", template)
+        self.assertIn("Generate without progress updates", template)
 
 
 if __name__ == "__main__":
