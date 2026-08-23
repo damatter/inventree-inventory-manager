@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from .automation import (
     PLUGIN_SLUG,
     ReportSetupError,
-    generate_stock_entry_report,
     queue_replenishment_report,
+    queue_stock_entry_report,
 )
 from .csv_exports import replenishment_csv, stock_entry_csv
 from .emailing import (
@@ -20,11 +21,13 @@ from .emailing import (
     queue_replenishment_report_email,
     queue_stock_entry_test_email,
 )
-from .reports import build_report_context
+from .reports import STOCK_ENTRY_REPORT_NAME, build_report_context
 from .stock_entries import (
     build_stock_entry_context,
     user_can_view_stock_entry_pricing,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_settings(post_data) -> tuple[dict[str, object], list[str]]:
@@ -214,7 +217,7 @@ def _report_status_payload(output) -> dict[str, object]:
         message = f"Report generation failed: {error}"
     elif complete and download_url:
         state = "ready"
-        message = "Your PDF is ready. Opening it now..."
+        message = "Your PDF is ready to open."
     elif complete:
         state = "error"
         message = "The report completed without a downloadable PDF file."
@@ -230,6 +233,28 @@ def _report_status_payload(output) -> dict[str, object]:
         "download_url": download_url,
         "message": message,
     }
+
+
+def _report_job_payload(output, control_panel_url: str) -> dict[str, object]:
+    """Return generation state plus stable URLs for the Reporting page."""
+
+    status_url = f"{control_panel_url}report/{output.pk}/"
+    return {
+        **_report_status_payload(output),
+        "status_url": status_url,
+        "status_json_url": f"{status_url}?format=json",
+    }
+
+
+def _json_generation_error(message: str, status: int = 400):
+    """Return one consistent generation error to the in-page workflow."""
+
+    from django.http import JsonResponse
+
+    return JsonResponse(
+        {"state": "error", "message": message, "error": message},
+        status=status,
+    )
 
 
 def _accepts_json(request) -> bool:
@@ -350,11 +375,27 @@ def control_panel(request, plugin):
             elif action == "generate-report":
                 try:
                     output = queue_replenishment_report(request)
-                except ReportSetupError as error:
+                except PermissionDenied as error:
+                    if _accepts_json(request):
+                        return _json_generation_error(str(error), status=403)
+                    raise
+                except (ReportSetupError, ValidationError) as error:
+                    if _accepts_json(request):
+                        return _json_generation_error(str(error))
                     messages.error(request, str(error))
+                except Exception as error:
+                    logger.exception("Replenishment report generation failed")
+                    detail = f"Replenishment report generation failed: {error}"
+                    if _accepts_json(request):
+                        return _json_generation_error(detail, status=500)
+                    messages.error(request, detail)
                 else:
-                    status_url = f"{plugin.control_panel_url}report/{output.pk}/"
-                    return redirect(status_url)
+                    payload = _report_job_payload(output, plugin.control_panel_url)
+                    if _accepts_json(request):
+                        from django.http import JsonResponse
+
+                        return JsonResponse(payload)
+                    return redirect(payload["status_url"])
 
             elif action == "generate-report-csv":
                 context = build_report_context(policy=plugin.get_inventory_policy())
@@ -364,57 +405,52 @@ def control_panel(request, plugin):
                 )
 
             elif action == "generate-stock-entry-report":
-                _require_stock_entry_access(request.user)
+                try:
+                    _require_stock_entry_access(request.user)
+                except PermissionDenied as access_error:
+                    if _accepts_json(request):
+                        return _json_generation_error(
+                            str(access_error), status=403
+                        )
+                    raise
                 start, end, error = _stock_report_window(request.POST)
                 if error:
                     if _accepts_json(request):
-                        from django.http import JsonResponse
-
-                        return JsonResponse({"error": error}, status=400)
+                        return _json_generation_error(error)
                     messages.error(request, error)
-                elif not _accepts_json(request) and request.POST.get(
-                    "generation_mode"
-                ) != "direct":
-                    return render(
-                        request,
-                        "inventory_manager/report_launch.html",
-                        {
-                            "plugin_title": plugin.TITLE,
-                            "control_panel_url": plugin.control_panel_url,
-                            "period_start": start.isoformat(),
-                            "period_end": end.isoformat(),
-                        },
-                    )
                 else:
                     try:
-                        output = generate_stock_entry_report(start, end, request=request)
+                        output = queue_stock_entry_report(
+                            start,
+                            end,
+                            request,
+                            plugin_slug=plugin.SLUG,
+                        )
+                    except PermissionDenied as report_error:
+                        if _accepts_json(request):
+                            return _json_generation_error(
+                                str(report_error), status=403
+                            )
+                        raise
                     except (ReportSetupError, ValidationError) as report_error:
                         if _accepts_json(request):
-                            from django.http import JsonResponse
-
-                            return JsonResponse(
-                                {"error": str(report_error)}, status=400
-                            )
+                            return _json_generation_error(str(report_error))
                         messages.error(request, str(report_error))
+                    except Exception as report_error:
+                        logger.exception("Stock-entry report generation failed")
+                        detail = f"Stock-entry report generation failed: {report_error}"
+                        if _accepts_json(request):
+                            return _json_generation_error(detail, status=500)
+                        messages.error(request, detail)
                     else:
-                        from .models import StockEntryReportRun
-
-                        StockEntryReportRun.objects.create(
-                            kind=StockEntryReportRun.Kind.MANUAL,
-                            period_start=start,
-                            period_end=end,
-                            status=StockEntryReportRun.Status.GENERATED,
-                            output_id=output.pk,
-                            generated_by=request.user,
+                        payload = _report_job_payload(
+                            output, plugin.control_panel_url
                         )
-                        status_url = f"{plugin.control_panel_url}report/{output.pk}/"
                         if _accepts_json(request):
                             from django.http import JsonResponse
 
-                            return JsonResponse(
-                                {"output_id": output.pk, "status_url": status_url}
-                            )
-                        return redirect(status_url)
+                            return JsonResponse(payload)
+                        return redirect(payload["status_url"])
 
             elif action == "generate-stock-entry-csv":
                 _require_stock_entry_access(request.user)
@@ -594,19 +630,23 @@ def report_status(request, plugin, output_id: int):
     def authenticated_view(request):
         from .models import StockEntryReportRun
 
-        if (
-            StockEntryReportRun.objects.filter(output_id=output_id).exists()
-            and not user_can_view_stock_entry_pricing(request.user)
-        ):
-            raise PermissionDenied(
-                "You no longer have access to stock-entry valuation reports."
-            )
-
         outputs = DataOutput.objects.filter(pk=output_id, plugin=PLUGIN_SLUG)
         if not request.user.is_staff:
             outputs = outputs.filter(user=request.user)
 
         output = get_object_or_404(outputs)
+        is_stock_entry_output = (
+            str(getattr(output, "template_name", "") or "").strip().casefold()
+            == STOCK_ENTRY_REPORT_NAME.casefold()
+            or StockEntryReportRun.objects.filter(output_id=output_id).exists()
+        )
+        if is_stock_entry_output and not user_can_view_stock_entry_pricing(
+            request.user
+        ):
+            raise PermissionDenied(
+                "You no longer have access to stock-entry valuation reports."
+            )
+
         payload = _report_status_payload(output)
 
         if request.GET.get("format") == "json" or _accepts_json(request):

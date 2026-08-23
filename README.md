@@ -34,13 +34,13 @@ against a parent template's variants is not counted twice.
 Use this pinned source URL in the plugin installer:
 
 ```text
-git+https://github.com/damatter/inventree-inventory-manager.git@0.7.0
+git+https://github.com/damatter/inventree-inventory-manager.git@0.7.1
 ```
 
 The equivalent `plugins.txt` entry is:
 
 ```text
-inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.7.0
+inventree-inventory-manager @ git+https://github.com/damatter/inventree-inventory-manager.git@0.7.1
 ```
 
 Leave the separate version field blank because the Git tag pins the release.
@@ -63,7 +63,7 @@ python -m pip install --editable .
 ```
 
 The package exposes `InventoryManagerPlugin` through the required
-`inventree_plugins` entry-point group. Version 0.7.0 targets InvenTree 1.3.x;
+`inventree_plugins` entry-point group. Version 0.7.1 targets InvenTree 1.3.x;
 the stock-history contract should be reviewed before enabling it on a future
 InvenTree 1.4 release.
 
@@ -93,7 +93,7 @@ Create a second report template targeting the **Part** model for stock inflows:
 The stock-entry report uses InvenTree's dated stock-history records for manual
 stock-item creation, manual additions, purchase-order receipts, and completed
 build output. It deliberately excludes returns and stock counts. Install **Part
-Pricing 0.6.1 or newer** before Inventory Manager 0.7.0. Material value is the
+Pricing 0.6.1 or newer** before Inventory Manager 0.7.1. Material value is the
 active material cost per unit multiplied by the quantity entered; lowest and
 highest sale prices come from the actual active customer price breaks. The
 companion plugin converts all figures to InvenTree's default currency. Missing
@@ -131,10 +131,15 @@ period, PDF job, recipient, delivery state, error, and optional accounting
 acknowledgement.
 
 Version 0.7.0 replaces StockItem purchase-price valuation with Part Pricing's
-batched material and customer-price snapshot. It also gives both PDF workflows
-a shared pending / ready / error screen. The stock-entry workflow displays its
-progress page before starting the synchronous InvenTree 1.3.x renderer, so long
-reports no longer leave an unexplained blank tab.
+batched material and customer-price snapshot.
+
+Version 0.7.1 keeps both PDF workflows on the Reporting screen and shows an
+in-page indeterminate progress bar while a report is being prepared. Reports
+never open a new tab automatically; the completed PDF is opened only when the
+user selects **Open PDF**. Stock-entry PDF generation is queued on InvenTree's
+background worker so the Reporting page can poll real job progress without
+waiting for a long web request. This release also fixes background request
+compatibility with InvenTree 1.3.5.
 
 ## Automatic email reporting
 

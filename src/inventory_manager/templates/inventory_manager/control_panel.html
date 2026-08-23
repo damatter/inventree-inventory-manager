@@ -67,6 +67,17 @@
         .messages { margin-bottom: 16px; }
         .message { margin-bottom: 8px; padding: 12px 14px; border-radius: 8px; color: #205c39; background: #e6f4eb; }
         .message.error { color: #8a2424; background: #f9e2e2; }
+        .generation-panel { margin-bottom: 18px; padding: 22px; }
+        .generation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+        .generation-heading h2 { margin: 0 0 5px; font-size: 20px; }
+        .generation-heading p { margin: 0; color: #687681; line-height: 1.45; }
+        .generation-progress { height: 12px; margin-top: 18px; overflow: hidden; border-radius: 999px; background: #e3e9ed; }
+        .generation-progress-bar { width: 0; height: 100%; border-radius: inherit; background: #26734d; transition: width .25s ease; }
+        .generation-progress.indeterminate .generation-progress-bar { width: 38%; animation: generation-progress 1.25s ease-in-out infinite; }
+        .generation-percent { display: block; min-height: 18px; margin-top: 7px; color: #687681; font-size: 12px; text-align: right; }
+        .generation-panel.error .status { color: #8a2424; background: #f9e2e2; }
+        .generation-panel.ready .status { color: #205c39; background: #dcefe2; }
+        @keyframes generation-progress { 0% { transform: translateX(-120%); } 50% { transform: translateX(90%); } 100% { transform: translateX(270%); } }
         .register { margin-top: 18px; padding: 22px; }
         .register h2 { margin: 0 0 6px; font-size: 20px; }
         .register > p { margin: 0 0 16px; color: #687681; line-height: 1.45; }
@@ -104,6 +115,21 @@
 
     {% if messages %}<div class="messages">{% for message in messages %}<div class="message{% if message.tags %} {{ message.tags }}{% endif %}">{{ message }}</div>{% endfor %}</div>{% endif %}
 
+    <section id="generation-panel" class="card generation-panel" aria-live="polite" hidden>
+        <div class="generation-heading">
+            <div><h2 id="generation-title">Generating report</h2><p id="generation-message">Preparing the report data and PDF.</p></div>
+            <span id="generation-state" class="status on">Working</span>
+        </div>
+        <div id="generation-progress" class="generation-progress indeterminate" role="progressbar" aria-label="Report generation progress">
+            <div id="generation-progress-bar" class="generation-progress-bar"></div>
+        </div>
+        <span id="generation-percent" class="generation-percent">Preparing PDF...</span>
+        <div class="actions">
+            <a id="generation-open" class="button" href="" hidden>Open PDF</a>
+            <button id="generation-reset" class="button secondary" type="button" hidden>Generate another report</button>
+        </div>
+    </section>
+
     <section class="hero">
         <div><h1>Inventory Reporting</h1><p>Generate actionable replenishment reports, track stock entering the business, and confirm that accounting has recorded every delivered period.</p></div>
         <div class="hero-stats">
@@ -122,8 +148,8 @@
                 <div class="summary-item"><span>Recipients</span><strong>{{ email_recipient|default:"Not configured" }}</strong></div>
                 <div class="summary-item"><span>Schedule</span><strong>{% if automation_enabled %}Every {{ automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
             </div>
-            <form method="post" class="workflow-form">{% csrf_token %}<div class="actions workflow-actions">
-                <button class="button" name="action" value="generate-report" type="submit" formtarget="_blank">Generate PDF</button>
+            <form method="post" class="workflow-form pdf-generation-form" data-report-label="Replenishment">{% csrf_token %}<div class="actions workflow-actions">
+                <button class="button pdf-generation-button" name="action" value="generate-report" type="submit">Generate PDF</button>
                 <button class="button secondary" name="action" value="generate-report-csv" type="submit">Generate CSV</button>
                 {% if is_staff %}<button class="button secondary" name="action" value="send-report-email" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
             </div></form>
@@ -136,14 +162,14 @@
                 <div class="summary-item"><span>Recipients</span><strong>{{ stock_entry_email_recipient|default:"Not configured" }}</strong></div>
                 <div class="summary-item"><span>Schedule</span><strong>{% if monthly_stock_report_enabled %}Every {{ stock_entry_automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
             </div>
-            <form method="post" class="workflow-form">
+            <form method="post" class="workflow-form pdf-generation-form" data-report-label="Stock-entry">
                 {% csrf_token %}
                 <div class="date-grid">
                     <div><label for="period-start">Start date</label><input id="period-start" name="period_start" type="date" value="{{ stock_report_default_start }}" required></div>
                     <div><label for="period-end">End date</label><input id="period-end" name="period_end" type="date" value="{{ stock_report_default_end }}" required></div>
                 </div>
                 <div class="actions workflow-actions">
-                    <button class="button" name="action" value="generate-stock-entry-report" type="submit" formtarget="_blank">Generate PDF</button>
+                    <button class="button pdf-generation-button" name="action" value="generate-stock-entry-report" type="submit">Generate PDF</button>
                     <button class="button secondary" name="action" value="generate-stock-entry-csv" type="submit">Generate CSV</button>
                     {% if is_staff %}<button class="button secondary" name="action" value="send-stock-entry-email" type="submit"{% if not email_configured or not stock_entry_email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
                 </div>
@@ -217,5 +243,219 @@
 
     <div class="footer">INTERNAL - DiCor Engineering &middot; Inventory Manager {{ plugin_version }}</div>
 </main>
+<script>
+    (function () {
+        "use strict";
+
+        if (!window.fetch || !window.FormData) {
+            return;
+        }
+
+        var panel = document.getElementById("generation-panel");
+        var title = document.getElementById("generation-title");
+        var message = document.getElementById("generation-message");
+        var state = document.getElementById("generation-state");
+        var progress = document.getElementById("generation-progress");
+        var progressBar = document.getElementById("generation-progress-bar");
+        var percent = document.getElementById("generation-percent");
+        var openPdf = document.getElementById("generation-open");
+        var reset = document.getElementById("generation-reset");
+        var generationButtons = Array.prototype.slice.call(
+            document.querySelectorAll(".pdf-generation-button")
+        );
+        var pollTimer = null;
+        var pollCount = 0;
+        var generationToken = 0;
+
+        function setButtonsDisabled(disabled) {
+            generationButtons.forEach(function (button) {
+                button.disabled = disabled;
+            });
+        }
+
+        function showPanel() {
+            panel.hidden = false;
+            panel.scrollIntoView({behavior: "smooth", block: "nearest"});
+        }
+
+        function setIndeterminate(label) {
+            progress.classList.add("indeterminate");
+            progress.removeAttribute("aria-valuenow");
+            progressBar.style.width = "";
+            percent.textContent = label || "Preparing PDF...";
+        }
+
+        function setDeterminate(value) {
+            var bounded = Math.max(0, Math.min(100, Math.round(value)));
+            progress.classList.remove("indeterminate");
+            progress.setAttribute("aria-valuemin", "0");
+            progress.setAttribute("aria-valuemax", "100");
+            progress.setAttribute("aria-valuenow", String(bounded));
+            progressBar.style.width = bounded + "%";
+            percent.textContent = bounded + "% complete";
+        }
+
+        function showWorking(label, data) {
+            panel.classList.remove("ready", "error");
+            title.textContent = "Generating " + label + " report";
+            message.textContent = (data && data.message) || "Preparing the report data and PDF. You can stay on this page.";
+            state.textContent = "Working";
+            state.className = "status on";
+            openPdf.hidden = true;
+            reset.hidden = true;
+            setButtonsDisabled(true);
+
+            if (data && Number(data.total) > 1) {
+                setDeterminate((Number(data.progress) / Number(data.total)) * 100);
+            } else {
+                setIndeterminate("Preparing PDF...");
+            }
+            showPanel();
+        }
+
+        function showReady(data) {
+            panel.classList.remove("error");
+            panel.classList.add("ready");
+            title.textContent = "Report ready";
+            message.textContent = "Your PDF is ready. Open it when you are ready, or generate another report below.";
+            state.textContent = "Ready";
+            state.className = "status on";
+            setDeterminate(100);
+            openPdf.href = data.download_url;
+            openPdf.hidden = false;
+            reset.hidden = false;
+            setButtonsDisabled(false);
+        }
+
+        function showError(detail) {
+            panel.classList.remove("ready");
+            panel.classList.add("error");
+            title.textContent = "Report could not be generated";
+            message.textContent = detail || "InvenTree could not generate this report.";
+            state.textContent = "Error";
+            state.className = "status";
+            progress.classList.remove("indeterminate");
+            progress.removeAttribute("aria-valuenow");
+            progressBar.style.width = "0";
+            percent.textContent = "Generation stopped";
+            openPdf.hidden = true;
+            reset.hidden = false;
+            setButtonsDisabled(false);
+            showPanel();
+        }
+
+        function readJson(response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    throw new Error(data.message || data.error || "Report generation failed.");
+                }
+                return data;
+            });
+        }
+
+        function pollStatus(url, label, token) {
+            if (token !== generationToken) {
+                return;
+            }
+            if (pollCount >= 300) {
+                showError("This report is taking longer than expected. Try again, or check Recent generated files below.");
+                return;
+            }
+            pollCount += 1;
+
+            window.fetch(url, {
+                credentials: "same-origin",
+                cache: "no-store",
+                headers: {"Accept": "application/json"}
+            }).then(readJson).then(function (data) {
+                if (token !== generationToken) {
+                    return;
+                }
+                if (data.state === "ready" && data.download_url) {
+                    showReady(data);
+                } else if (data.state === "error") {
+                    showError(data.message);
+                } else {
+                    showWorking(label, data);
+                    pollTimer = window.setTimeout(function () {
+                        pollStatus(url, label, token);
+                    }, 2000);
+                }
+            }).catch(function (error) {
+                if (token !== generationToken) {
+                    return;
+                }
+                message.textContent = "Connection interrupted while checking the report. Retrying...";
+                pollTimer = window.setTimeout(function () {
+                    pollStatus(url, label, token);
+                }, 3000);
+            });
+        }
+
+        function generate(form, submitter) {
+            generationToken += 1;
+            var token = generationToken;
+            pollCount = 0;
+            window.clearTimeout(pollTimer);
+            var label = form.dataset.reportLabel || "PDF";
+            var formData = new FormData(form);
+            formData.set("action", submitter.value);
+            showWorking(label);
+
+            window.fetch(form.action || window.location.href, {
+                method: "POST",
+                body: formData,
+                credentials: "same-origin",
+                cache: "no-store",
+                headers: {"Accept": "application/json"}
+            }).then(readJson).then(function (data) {
+                if (token !== generationToken) {
+                    return;
+                }
+                if (data.state === "ready" && data.download_url) {
+                    showReady(data);
+                } else if (data.state === "error") {
+                    showError(data.message);
+                } else if (data.status_json_url) {
+                    showWorking(label, data);
+                    pollTimer = window.setTimeout(function () {
+                        pollStatus(data.status_json_url, label, token);
+                    }, 1000);
+                } else {
+                    showError("InvenTree did not return a report job.");
+                }
+            }).catch(function (error) {
+                if (token === generationToken) {
+                    showError(error.message);
+                }
+            });
+        }
+
+        Array.prototype.slice.call(
+            document.querySelectorAll(".pdf-generation-form")
+        ).forEach(function (form) {
+            form.addEventListener("submit", function (event) {
+                var submitter = event.submitter || document.activeElement;
+                if (!submitter || submitter.classList.contains("pdf-generation-button") === false) {
+                    return;
+                }
+                event.preventDefault();
+                generate(form, submitter);
+            });
+        });
+
+        reset.addEventListener("click", function () {
+            generationToken += 1;
+            window.clearTimeout(pollTimer);
+            panel.hidden = true;
+            openPdf.hidden = true;
+            reset.hidden = true;
+            setButtonsDisabled(false);
+            if (generationButtons.length) {
+                generationButtons[0].focus();
+            }
+        });
+    }());
+</script>
 </body>
 </html>

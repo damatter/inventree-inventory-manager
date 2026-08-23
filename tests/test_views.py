@@ -9,6 +9,7 @@ from inventory_manager.views import (
     _accepts_json,
     _output_error,
     _output_url,
+    _report_job_payload,
     _report_status_payload,
     _require_stock_entry_access,
     _stock_report_window,
@@ -230,6 +231,27 @@ class ReportStatusPayloadTests(unittest.TestCase):
         self.assertEqual(payload["state"], "ready")
         self.assertEqual(payload["download_url"], "/media/ready.pdf")
 
+    def test_job_payload_keeps_the_existing_status_route(self) -> None:
+        output = SimpleNamespace(
+            pk=12,
+            complete=False,
+            progress=0,
+            total=1,
+            errors=None,
+            output=None,
+        )
+
+        payload = _report_job_payload(output, "/plugin/inventory-manager/")
+
+        self.assertEqual(
+            payload["status_url"], "/plugin/inventory-manager/report/12/"
+        )
+        self.assertEqual(
+            payload["status_json_url"],
+            "/plugin/inventory-manager/report/12/?format=json",
+        )
+        self.assertEqual(payload["state"], "pending")
+
     def test_worker_error_is_terminal_and_readable(self) -> None:
         output = SimpleNamespace(
             pk=9,
@@ -354,7 +376,7 @@ class ReportStatusPayloadTests(unittest.TestCase):
 
 
 class ReportGenerationTemplateTests(unittest.TestCase):
-    def test_both_pdf_actions_open_the_shared_status_flow_in_a_new_tab(self) -> None:
+    def test_both_pdf_actions_use_the_in_page_generation_flow(self) -> None:
         template = (
             Path(__file__).parents[1]
             / "src"
@@ -364,11 +386,16 @@ class ReportGenerationTemplateTests(unittest.TestCase):
             / "control_panel.html"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('value="generate-report" type="submit" formtarget="_blank"', template)
-        self.assertIn(
-            'value="generate-stock-entry-report" type="submit" formtarget="_blank"',
-            template,
-        )
+        self.assertIn('value="generate-report" type="submit">Generate PDF', template)
+        self.assertIn('value="generate-stock-entry-report" type="submit">Generate PDF', template)
+        self.assertEqual(template.count('class="button pdf-generation-button"'), 2)
+        self.assertNotIn('formtarget="_blank"', template)
+        self.assertIn('id="generation-panel"', template)
+        self.assertIn("event.preventDefault()", template)
+        self.assertIn("data.status_json_url", template)
+        self.assertIn('id="generation-open" class="button" href="" hidden', template)
+        self.assertNotIn('id="generation-open" class="button" href="" target=', template)
+        self.assertIn("Generate another report", template)
         self.assertIn("{% if can_view_stock_pricing %}<section", template)
         self.assertIn("purchase-order and sales-order view roles", template)
 
@@ -384,25 +411,12 @@ class ReportGenerationTemplateTests(unittest.TestCase):
 
         self.assertIn('headers: {"Accept": "application/json"}', template)
         self.assertIn('id="open-pdf"', template)
+        self.assertNotIn('id="open-pdf" class="button" href="{{ download_url }}" target=', template)
         self.assertIn("Return to Reporting", template)
+        self.assertIn('role="progressbar"', template)
+        self.assertNotIn("Report job {{ output_id }}", template)
+        self.assertNotIn("window.location.assign(data.download_url)", template)
         self.assertNotIn('http-equiv="refresh"', template)
-
-    def test_stock_entry_launch_screen_starts_background_generation(self) -> None:
-        template = (
-            Path(__file__).parents[1]
-            / "src"
-            / "inventory_manager"
-            / "templates"
-            / "inventory_manager"
-            / "report_launch.html"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn('name="action" value="generate-stock-entry-report"', template)
-        self.assertIn('headers: {"Accept": "application/json"}', template)
-        self.assertIn("new FormData(form)", template)
-        self.assertIn("window.location.assign(data.status_url)", template)
-        self.assertIn("Generate without progress updates", template)
-
 
 if __name__ == "__main__":
     unittest.main()

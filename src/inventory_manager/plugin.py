@@ -49,7 +49,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.7.0"
+    VERSION = "0.7.1"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.3.2"
     MAX_VERSION = "1.3.99"
@@ -313,6 +313,28 @@ class InventoryManagerPlugin(
             stock_entry_csv(context),
         )
         return output
+
+    def render_stock_entry_report_job(
+        self,
+        output_id,
+        template_id,
+        anchor_id,
+        start_value,
+        end_value,
+        user_id=None,
+    ):
+        """Worker entrypoint for a manually requested stock-entry PDF."""
+
+        from .automation import render_stock_entry_report_job
+
+        return render_stock_entry_report_job(
+            output_id,
+            template_id,
+            anchor_id,
+            start_value,
+            end_value,
+            user_id,
+        )
 
     def run_scheduled_stock_entry_report(self, force: bool = False):
         """Generate, email, and retain one idempotent interval report."""
