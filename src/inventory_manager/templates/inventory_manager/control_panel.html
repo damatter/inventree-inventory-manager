@@ -53,6 +53,7 @@
         .button.secondary { color: #263f51; background: #e5ebef; }
         .button.secondary:hover { background: #d7e0e5; }
         .button:disabled { opacity: .45; cursor: not-allowed; }
+        [hidden] { display: none !important; }
         .help { display: block; margin-top: 5px; color: #71808a; font-size: 12px; line-height: 1.4; }
         .settings { margin-top: 18px; overflow: hidden; }
         .settings summary { padding: 18px 22px; cursor: pointer; font-size: 16px; font-weight: 800; list-style-position: inside; }
@@ -148,7 +149,7 @@
                 <div class="summary-item"><span>Recipients</span><strong>{{ email_recipient|default:"Not configured" }}</strong></div>
                 <div class="summary-item"><span>Schedule</span><strong>{% if automation_enabled %}Every {{ automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
             </div>
-            <form method="post" class="workflow-form pdf-generation-form" data-report-label="Replenishment">{% csrf_token %}<div class="actions workflow-actions">
+            <form method="post" action="{{ control_panel_url }}" class="workflow-form pdf-generation-form" data-report-label="Replenishment">{% csrf_token %}<div class="actions workflow-actions">
                 <button class="button pdf-generation-button" name="action" value="generate-report" type="submit">Generate PDF</button>
                 <button class="button secondary" name="action" value="generate-report-csv" type="submit">Generate CSV</button>
                 {% if is_staff %}<button class="button secondary" name="action" value="send-report-email" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
@@ -162,7 +163,7 @@
                 <div class="summary-item"><span>Recipients</span><strong>{{ stock_entry_email_recipient|default:"Not configured" }}</strong></div>
                 <div class="summary-item"><span>Schedule</span><strong>{% if monthly_stock_report_enabled %}Every {{ stock_entry_automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
             </div>
-            <form method="post" class="workflow-form pdf-generation-form" data-report-label="Stock-entry">
+            <form method="post" action="{{ control_panel_url }}" class="workflow-form pdf-generation-form" data-report-label="Stock-entry">
                 {% csrf_token %}
                 <div class="date-grid">
                     <div><label for="period-start">Start date</label><input id="period-start" name="period_start" type="date" value="{{ stock_report_default_start }}" required></div>
@@ -188,7 +189,7 @@
             {% if is_staff %}
                 {% if not schedule_integration_enabled %}<div class="notice">Automatic delivery requires <strong>Plugin Schedule Integration</strong> in InvenTree. Enable it and reload plugins before relying on either schedule.</div>{% endif %}
                 {% if not email_configured %}<div class="notice">Outgoing email is not configured in InvenTree. Configure the email server before testing or scheduling delivery.</div>{% endif %}
-                <form method="post">
+                <form method="post" action="{{ control_panel_url }}">
                     {% csrf_token %}<input type="hidden" name="action" value="save-settings">
                     <div class="form-grid">
                         <section class="settings-section">
@@ -231,7 +232,7 @@
             <tbody>{% for run in stock_report_runs %}<tr>
                 <td data-label="Period"><strong>{{ run.period_start }} to {{ run.period_end }}</strong><br><span class="help">{{ run.kind }}{% if run.url %} &middot; <a href="{{ run.url }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</span></td>
                 <td data-label="Delivery"><span class="status {{ run.status_code }}">{{ run.status }}</span>{% if run.sent_at %}<br><span class="help">Sent {{ run.sent_at }}{% if run.recipient %} to {{ run.recipient }}{% endif %}</span>{% endif %}{% if run.error %}<br><span class="help" style="color:#8a2424">{{ run.error }}</span>{% endif %}</td>
-                <td data-label="Accounting">{% if run.acknowledged_at %}<strong>{{ run.accounting_reference|default:"Recorded" }}</strong><br><span class="help">Acknowledged {{ run.acknowledged_at }} by {{ run.acknowledged_by }}{% if run.acknowledgement_notes %}<br>{{ run.acknowledgement_notes }}{% endif %}</span>{% else %}<form method="post" class="ack-form">{% csrf_token %}<input type="hidden" name="action" value="acknowledge-stock-report"><input type="hidden" name="report_run_id" value="{{ run.pk }}"><input name="accounting_reference" type="text" placeholder="Accounting reference"><input name="acknowledgement_notes" type="text" placeholder="Notes (optional)"><button class="button secondary" type="submit">Mark recorded</button></form>{% endif %}</td>
+                <td data-label="Accounting">{% if run.acknowledged_at %}<strong>{{ run.accounting_reference|default:"Recorded" }}</strong><br><span class="help">Acknowledged {{ run.acknowledged_at }} by {{ run.acknowledged_by }}{% if run.acknowledgement_notes %}<br>{{ run.acknowledgement_notes }}{% endif %}</span>{% else %}<form method="post" action="{{ control_panel_url }}" class="ack-form">{% csrf_token %}<input type="hidden" name="action" value="acknowledge-stock-report"><input type="hidden" name="report_run_id" value="{{ run.pk }}"><input name="accounting_reference" type="text" placeholder="Accounting reference"><input name="acknowledgement_notes" type="text" placeholder="Notes (optional)"><button class="button secondary" type="submit">Mark recorded</button></form>{% endif %}</td>
             </tr>{% endfor %}</tbody>
         </table></div>
     </section>
@@ -400,6 +401,7 @@
             var label = form.dataset.reportLabel || "PDF";
             var formData = new FormData(form);
             formData.set("action", submitter.value);
+            formData.set("response_format", "json");
             showWorking(label);
 
             window.fetch(form.action || window.location.href, {

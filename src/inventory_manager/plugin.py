@@ -49,7 +49,7 @@ class InventoryManagerPlugin(
     SLUG = "inventory-manager"
     TITLE = "Inventory Manager"
     DESCRIPTION = "Stock-level reporting and replenishment planning"
-    VERSION = "0.7.1"
+    VERSION = "0.7.2"
     AUTHOR = "Matt Dick"
     MIN_VERSION = "1.3.2"
     MAX_VERSION = "1.3.99"

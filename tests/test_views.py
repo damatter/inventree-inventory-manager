@@ -198,6 +198,24 @@ class ReportStatusPayloadTests(unittest.TestCase):
             _accepts_json(SimpleNamespace(headers={"Accept": "application/json"}))
         )
         self.assertFalse(_accepts_json(SimpleNamespace(headers={"Accept": "text/html"})))
+        self.assertTrue(
+            _accepts_json(
+                SimpleNamespace(
+                    GET={},
+                    POST={"response_format": "json"},
+                    headers={"Accept": "text/html"},
+                )
+            )
+        )
+        self.assertTrue(
+            _accepts_json(
+                SimpleNamespace(
+                    GET={"format": "json"},
+                    POST={},
+                    headers={"Accept": "text/html"},
+                )
+            )
+        )
 
     def test_pending_job_reports_progress_without_exposing_file(self) -> None:
         output = SimpleNamespace(
@@ -389,9 +407,12 @@ class ReportGenerationTemplateTests(unittest.TestCase):
         self.assertIn('value="generate-report" type="submit">Generate PDF', template)
         self.assertIn('value="generate-stock-entry-report" type="submit">Generate PDF', template)
         self.assertEqual(template.count('class="button pdf-generation-button"'), 2)
+        self.assertEqual(template.count('action="{{ control_panel_url }}"'), 4)
         self.assertNotIn('formtarget="_blank"', template)
         self.assertIn('id="generation-panel"', template)
         self.assertIn("event.preventDefault()", template)
+        self.assertIn('formData.set("response_format", "json")', template)
+        self.assertIn("[hidden] { display: none !important; }", template)
         self.assertIn("data.status_json_url", template)
         self.assertIn('id="generation-open" class="button" href="" hidden', template)
         self.assertNotIn('id="generation-open" class="button" href="" target=', template)

@@ -260,6 +260,13 @@ def _json_generation_error(message: str, status: int = 400):
 def _accepts_json(request) -> bool:
     """Return whether a browser request explicitly asks for JSON."""
 
+    if str(getattr(request, "GET", {}).get("format", "")).casefold() == "json":
+        return True
+    if (
+        str(getattr(request, "POST", {}).get("response_format", "")).casefold()
+        == "json"
+    ):
+        return True
     return "application/json" in str(
         getattr(request, "headers", {}).get("Accept", "")
     ).casefold()
