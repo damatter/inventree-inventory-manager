@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-from datetime import date
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -15,7 +13,6 @@ from .reports import (
 )
 
 PLUGIN_SLUG = "inventory-manager"
-logger = logging.getLogger(__name__)
 
 
 class ReportSetupError(RuntimeError):
@@ -188,114 +185,3 @@ def generate_stock_entry_report(start, end, request=None, context=None):
         raise ReportSetupError("The stock-entry report did not produce an output.")
     output.inventory_manager_stock_entry_context = context
     return _tag_output(output)
-
-
-def queue_stock_entry_report(start, end, request, plugin_slug=PLUGIN_SLUG):
-    """Create a pollable output and render the selected window on the worker."""
-
-    from common.models import DataOutput
-    from InvenTree.tasks import offload_task
-
-    template = find_stock_entry_template()
-    anchor = report_anchor(template)
-    user = getattr(request, "user", None)
-    _check_report_permission(user, template)
-
-    output = DataOutput.objects.create(
-        user=user if user and getattr(user, "is_authenticated", False) else None,
-        total=1,
-        progress=0,
-        complete=False,
-        output_type=DataOutput.DataOutputTypes.REPORT,
-        template_name=STOCK_ENTRY_REPORT_NAME,
-        plugin=PLUGIN_SLUG,
-        output=None,
-    )
-    task = offload_task(
-        "plugin.registry.call_plugin_function",
-        str(plugin_slug or PLUGIN_SLUG),
-        "render_stock_entry_report_job",
-        output.pk,
-        template.pk,
-        anchor.pk,
-        start.isoformat(),
-        end.isoformat(),
-        getattr(user, "pk", None),
-        group="inventory-manager-stock-entry-report",
-    )
-    if not task:
-        message = "InvenTree could not queue the stock-entry report."
-        output.mark_failure(error=message)
-        raise ReportSetupError(message)
-
-    output.refresh_from_db()
-    return output
-
-
-def render_stock_entry_report_job(
-    output_id,
-    template_id,
-    anchor_id,
-    start_value,
-    end_value,
-    user_id=None,
-):
-    """Render one queued stock-entry report while preserving its date context."""
-
-    from common.models import DataOutput
-    from django.contrib.auth import get_user_model
-    from report.models import ReportTemplate
-
-    output = DataOutput.objects.get(pk=output_id)
-    try:
-        template = ReportTemplate.objects.get(pk=template_id)
-        anchor = template.get_model().objects.get(pk=anchor_id)
-        user = (
-            get_user_model().objects.filter(pk=user_id).first()
-            if user_id is not None
-            else None
-        )
-        start = date.fromisoformat(str(start_value))
-        end = date.fromisoformat(str(end_value))
-
-        from .stock_entries import build_stock_entry_context
-
-        context = build_stock_entry_context(start, end)
-        report_request = _background_report_request(user)
-        report_request.inventory_manager_period_start = start
-        report_request.inventory_manager_period_end = end
-        report_request.inventory_manager_stock_entry_context = context
-        result = template.print([anchor], request=report_request, output=output)
-        result = _tag_output(result)
-
-        try:
-            from .models import StockEntryReportRun
-
-            StockEntryReportRun.objects.create(
-                kind=StockEntryReportRun.Kind.MANUAL,
-                period_start=start,
-                period_end=end,
-                status=StockEntryReportRun.Status.GENERATED,
-                output_id=output.pk,
-                generated_by=user,
-            )
-        except Exception:
-            logger.exception("Could not add stock-entry PDF to accounting register")
-        return result
-    except Exception as error:
-        output.mark_failure(error=str(error))
-        try:
-            from .models import StockEntryReportRun
-
-            StockEntryReportRun.objects.create(
-                kind=StockEntryReportRun.Kind.MANUAL,
-                period_start=date.fromisoformat(str(start_value)),
-                period_end=date.fromisoformat(str(end_value)),
-                status=StockEntryReportRun.Status.FAILED,
-                output_id=output.pk,
-                generated_by=(user if "user" in locals() else None),
-                error=str(error),
-            )
-        except Exception:
-            logger.exception("Could not record failed stock-entry report")
-        raise

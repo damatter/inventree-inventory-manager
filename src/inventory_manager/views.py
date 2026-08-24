@@ -9,8 +9,8 @@ from decimal import Decimal, InvalidOperation
 from .automation import (
     PLUGIN_SLUG,
     ReportSetupError,
+    generate_stock_entry_report,
     queue_replenishment_report,
-    queue_stock_entry_report,
 )
 from .csv_exports import replenishment_csv, stock_entry_csv
 from .emailing import (
@@ -427,11 +427,8 @@ def control_panel(request, plugin):
                     messages.error(request, error)
                 else:
                     try:
-                        output = queue_stock_entry_report(
-                            start,
-                            end,
-                            request,
-                            plugin_slug=plugin.SLUG,
+                        output = generate_stock_entry_report(
+                            start, end, request=request
                         )
                     except PermissionDenied as report_error:
                         if _accepts_json(request):
@@ -450,6 +447,16 @@ def control_panel(request, plugin):
                             return _json_generation_error(detail, status=500)
                         messages.error(request, detail)
                     else:
+                        from .models import StockEntryReportRun
+
+                        StockEntryReportRun.objects.create(
+                            kind=StockEntryReportRun.Kind.MANUAL,
+                            period_start=start,
+                            period_end=end,
+                            status=StockEntryReportRun.Status.GENERATED,
+                            output_id=output.pk,
+                            generated_by=request.user,
+                        )
                         payload = _report_job_payload(
                             output, plugin.control_panel_url
                         )
@@ -586,6 +593,7 @@ def control_panel(request, plugin):
         context = {
             "plugin_title": plugin.TITLE,
             "plugin_version": plugin.VERSION,
+            "control_panel_url": plugin.control_panel_url,
             "is_staff": request.user.is_staff,
             "can_view_stock_pricing": can_view_stock_pricing,
             "default_minimum_stock": plugin._setting("DEFAULT_MINIMUM_STOCK", 2),
@@ -625,13 +633,14 @@ def control_panel(request, plugin):
 
 
 def report_status(request, plugin, output_id: int):
-    """Show report progress and expose a small authenticated polling response."""
+    """Wait for a report job, then download its PDF and return to Reporting."""
 
     from common.models import DataOutput
+    from django.contrib import messages
     from django.contrib.auth.decorators import login_required
     from django.core.exceptions import PermissionDenied
     from django.http import JsonResponse
-    from django.shortcuts import get_object_or_404, render
+    from django.shortcuts import get_object_or_404, redirect, render
 
     @login_required
     def authenticated_view(request):
@@ -658,6 +667,22 @@ def report_status(request, plugin, output_id: int):
 
         if request.GET.get("format") == "json" or _accepts_json(request):
             response = JsonResponse(payload)
+            response["Cache-Control"] = "no-store"
+            return response
+
+        if payload["state"] == "error":
+            messages.error(request, str(payload["message"]))
+            return redirect(plugin.control_panel_url)
+
+        if payload["state"] == "ready":
+            response = render(
+                request,
+                "inventory_manager/report_complete.html",
+                {
+                    "download_url": payload["download_url"],
+                    "control_panel_url": plugin.control_panel_url,
+                },
+            )
             response["Cache-Control"] = "no-store"
             return response
 
