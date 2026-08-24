@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlsplit
 
 from .reports import (
     REPORT_DESCRIPTION_MARKER,
@@ -17,6 +17,34 @@ PLUGIN_SLUG = "inventory-manager"
 
 class ReportSetupError(RuntimeError):
     """Raised when the replenishment report cannot be generated yet."""
+
+
+def _background_report_request(user=None):
+    """Return a real request rooted at InvenTree's configured public host."""
+
+    from django.contrib.auth.models import AnonymousUser
+    from django.test import RequestFactory
+    from InvenTree.helpers_model import get_base_url
+
+    configured_url = str(get_base_url() or "").strip()
+    if not configured_url:
+        configured_url = "http://localhost"
+    elif "://" not in configured_url:
+        # Django Sites commonly stores only a domain. InvenTree deployments are
+        # HTTPS by default, while an explicit http:// URL remains respected.
+        configured_url = f"https://{configured_url.lstrip('/')}"
+
+    parsed_url = urlsplit(configured_url)
+    host = parsed_url.netloc or "localhost"
+    secure = parsed_url.scheme.casefold() == "https"
+
+    request = RequestFactory().get(
+        "/plugin/inventory-manager/",
+        secure=secure,
+        HTTP_HOST=host,
+    )
+    request.user = user if user is not None else AnonymousUser()
+    return request
 
 
 def find_replenishment_template():
@@ -136,18 +164,24 @@ def generate_replenishment_report():
     return _tag_output(output)
 
 
-def generate_stock_entry_report(start, end, request=None):
+def generate_stock_entry_report(start, end, request=None, context=None):
     """Synchronously generate a stock-entry PDF for an explicit date window."""
 
     template = find_stock_entry_template()
     anchor = report_anchor(template)
     _check_report_permission(getattr(request, "user", None), template)
 
-    report_request = request or SimpleNamespace(user=None)
+    report_request = request or _background_report_request()
     report_request.inventory_manager_period_start = start
     report_request.inventory_manager_period_end = end
+    if context is None:
+        from .stock_entries import build_stock_entry_context
+
+        context = build_stock_entry_context(start, end)
+    report_request.inventory_manager_stock_entry_context = context
 
     output = template.print([anchor], request=report_request)
     if output is None:
         raise ReportSetupError("The stock-entry report did not produce an output.")
+    output.inventory_manager_stock_entry_context = context
     return _tag_output(output)

@@ -53,6 +53,7 @@
         .button.secondary { color: #263f51; background: #e5ebef; }
         .button.secondary:hover { background: #d7e0e5; }
         .button:disabled { opacity: .45; cursor: not-allowed; }
+        [hidden] { display: none !important; }
         .help { display: block; margin-top: 5px; color: #71808a; font-size: 12px; line-height: 1.4; }
         .settings { margin-top: 18px; overflow: hidden; }
         .settings summary { padding: 18px 22px; cursor: pointer; font-size: 16px; font-weight: 800; list-style-position: inside; }
@@ -67,6 +68,15 @@
         .messages { margin-bottom: 16px; }
         .message { margin-bottom: 8px; padding: 12px 14px; border-radius: 8px; color: #205c39; background: #e6f4eb; }
         .message.error { color: #8a2424; background: #f9e2e2; }
+        .generation-overlay { position: fixed; z-index: 1000; inset: 0; display: grid; padding: 20px; place-items: center; background: rgb(24 48 68 / 48%); backdrop-filter: blur(2px); }
+        .generation-panel { width: min(560px, 100%); padding: 30px; text-align: center; }
+        .generation-panel h2 { margin: 0 0 8px; font-size: 24px; }
+        .generation-panel p { margin: 0; color: #687681; line-height: 1.5; }
+        .generation-progress { height: 12px; margin-top: 18px; overflow: hidden; border-radius: 999px; background: #e3e9ed; }
+        .generation-progress-bar { width: 0; height: 100%; border-radius: inherit; background: #26734d; transition: width .25s ease; }
+        .generation-progress.indeterminate .generation-progress-bar { width: 38%; animation: generation-progress 1.25s ease-in-out infinite; }
+        .generation-percent { display: block; min-height: 18px; margin-top: 8px; color: #687681; font-size: 12px; text-align: center; }
+        @keyframes generation-progress { 0% { transform: translateX(-120%); } 50% { transform: translateX(90%); } 100% { transform: translateX(270%); } }
         .register { margin-top: 18px; padding: 22px; }
         .register h2 { margin: 0 0 6px; font-size: 20px; }
         .register > p { margin: 0 0 16px; color: #687681; line-height: 1.45; }
@@ -104,11 +114,22 @@
 
     {% if messages %}<div class="messages">{% for message in messages %}<div class="message{% if message.tags %} {{ message.tags }}{% endif %}">{{ message }}</div>{% endfor %}</div>{% endif %}
 
+    <div id="generation-overlay" class="generation-overlay" aria-live="polite" aria-busy="true" hidden>
+        <section class="card generation-panel">
+            <h2 id="generation-title">Generating report</h2>
+            <p>Preparing the report data and PDF. The download will begin automatically.</p>
+            <div class="generation-progress indeterminate" role="progressbar" aria-label="Report generation in progress">
+                <div class="generation-progress-bar"></div>
+            </div>
+            <span class="generation-percent">Please keep this page open...</span>
+        </section>
+    </div>
+
     <section class="hero">
         <div><h1>Inventory Reporting</h1><p>Generate actionable replenishment reports, track stock entering the business, and confirm that accounting has recorded every delivered period.</p></div>
         <div class="hero-stats">
             <div class="hero-stat"><span>Replenishment</span><strong>{% if automation_enabled %}Automatic{% else %}Manual{% endif %}</strong></div>
-            <div class="hero-stat"><span>Accounting pending</span><strong>{{ pending_accounting_count }}</strong></div>
+            <div class="hero-stat"><span>Accounting pending</span><strong>{% if can_view_stock_pricing %}{{ pending_accounting_count }}{% else %}Restricted{% endif %}</strong></div>
         </div>
     </section>
 
@@ -122,33 +143,38 @@
                 <div class="summary-item"><span>Recipients</span><strong>{{ email_recipient|default:"Not configured" }}</strong></div>
                 <div class="summary-item"><span>Schedule</span><strong>{% if automation_enabled %}Every {{ automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
             </div>
-            <form method="post" class="workflow-form">{% csrf_token %}<div class="actions workflow-actions">
-                <button class="button" name="action" value="generate-report" type="submit">Generate PDF</button>
+            <form method="post" action="{{ control_panel_url }}" class="workflow-form pdf-generation-form" data-report-label="Replenishment">{% csrf_token %}<div class="actions workflow-actions">
+                <button class="button pdf-generation-button" name="action" value="generate-report" type="submit">Generate PDF</button>
                 <button class="button secondary" name="action" value="generate-report-csv" type="submit">Generate CSV</button>
                 {% if is_staff %}<button class="button secondary" name="action" value="send-report-email" type="submit"{% if not email_configured or not email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
             </div></form>
         </section>
 
-        <section class="card workflow">
+        {% if can_view_stock_pricing %}<section class="card workflow">
             <div class="workflow-header"><div><div class="eyebrow">Inventory valuation</div><h3>Stock entries</h3></div><span class="status{% if monthly_stock_report_enabled %} on{% endif %}">{{ stock_entry_schedule_status }}</span></div>
             <p>Captures manual additions, purchase receipts, and completed build output for an auditable date window.</p>
             <div class="delivery-summary">
                 <div class="summary-item"><span>Recipients</span><strong>{{ stock_entry_email_recipient|default:"Not configured" }}</strong></div>
                 <div class="summary-item"><span>Schedule</span><strong>{% if monthly_stock_report_enabled %}Every {{ stock_entry_automation_interval_days }} days{% else %}Manual only{% endif %}</strong></div>
             </div>
-            <form method="post" class="workflow-form">
+            <form method="post" action="{{ control_panel_url }}" class="workflow-form pdf-generation-form" data-report-label="Stock-entry">
                 {% csrf_token %}
                 <div class="date-grid">
                     <div><label for="period-start">Start date</label><input id="period-start" name="period_start" type="date" value="{{ stock_report_default_start }}" required></div>
                     <div><label for="period-end">End date</label><input id="period-end" name="period_end" type="date" value="{{ stock_report_default_end }}" required></div>
                 </div>
                 <div class="actions workflow-actions">
-                    <button class="button" name="action" value="generate-stock-entry-report" type="submit">Generate PDF</button>
+                    <button class="button pdf-generation-button" name="action" value="generate-stock-entry-report" type="submit">Generate PDF</button>
                     <button class="button secondary" name="action" value="generate-stock-entry-csv" type="submit">Generate CSV</button>
                     {% if is_staff %}<button class="button secondary" name="action" value="send-stock-entry-email" type="submit"{% if not email_configured or not stock_entry_email_recipient %} disabled{% endif %}>Send test email</button>{% endif %}
                 </div>
             </form>
-        </section>
+        </section>{% else %}
+        <section class="card workflow">
+            <div class="workflow-header"><div><div class="eyebrow">Inventory valuation</div><h3>Stock entries</h3></div><span class="status">Restricted</span></div>
+            <p>Stock-entry material and sale-price exports require membership in the Part Pricing access group plus purchase-order and sales-order view roles.</p>
+            <div class="locked">Ask an InvenTree administrator to grant the existing Part Pricing permissions if you need this accounting report.</div>
+        </section>{% endif %}
     </div>
 
     <details class="card settings"{% if not is_staff %} open{% endif %}>
@@ -157,7 +183,7 @@
             {% if is_staff %}
                 {% if not schedule_integration_enabled %}<div class="notice">Automatic delivery requires <strong>Plugin Schedule Integration</strong> in InvenTree. Enable it and reload plugins before relying on either schedule.</div>{% endif %}
                 {% if not email_configured %}<div class="notice">Outgoing email is not configured in InvenTree. Configure the email server before testing or scheduling delivery.</div>{% endif %}
-                <form method="post">
+                <form method="post" action="{{ control_panel_url }}">
                     {% csrf_token %}<input type="hidden" name="action" value="save-settings">
                     <div class="form-grid">
                         <section class="settings-section">
@@ -182,7 +208,7 @@
                             <h3>Replenishment stock policy</h3><p>Controls which parts appear in the replenishment report.</p>
                             <div class="form-grid">
                                 <div><label for="default-minimum">Default minimum stock</label><input id="default-minimum" name="default_minimum_stock" type="number" min="1" step="1" value="{{ default_minimum_stock }}" required><span class="help">Used when a part has no minimum configured.</span></div>
-                                <div><label for="buffer-multiplier">Low-buffer multiplier</label><input id="buffer-multiplier" name="low_buffer_multiplier" type="number" min="1" step="0.1" value="{{ low_buffer_multiplier }}" required><span class="help">2 means below twice minimum is low buffer.</span></div>
+                                <div><label for="buffer-multiplier">Low-buffer multiplier</label><input id="buffer-multiplier" name="low_buffer_multiplier" type="number" min="1" step="0.1" value="{{ low_buffer_multiplier }}" required><span class="help">Parts below the saved multiple of minimum stock are low buffer.</span></div>
                             </div>
                         </section>
                     </div>
@@ -200,7 +226,7 @@
             <tbody>{% for run in stock_report_runs %}<tr>
                 <td data-label="Period"><strong>{{ run.period_start }} to {{ run.period_end }}</strong><br><span class="help">{{ run.kind }}{% if run.url %} &middot; <a href="{{ run.url }}" target="_blank" rel="noopener">Open PDF</a>{% endif %}</span></td>
                 <td data-label="Delivery"><span class="status {{ run.status_code }}">{{ run.status }}</span>{% if run.sent_at %}<br><span class="help">Sent {{ run.sent_at }}{% if run.recipient %} to {{ run.recipient }}{% endif %}</span>{% endif %}{% if run.error %}<br><span class="help" style="color:#8a2424">{{ run.error }}</span>{% endif %}</td>
-                <td data-label="Accounting">{% if run.acknowledged_at %}<strong>{{ run.accounting_reference|default:"Recorded" }}</strong><br><span class="help">Acknowledged {{ run.acknowledged_at }} by {{ run.acknowledged_by }}{% if run.acknowledgement_notes %}<br>{{ run.acknowledgement_notes }}{% endif %}</span>{% else %}<form method="post" class="ack-form">{% csrf_token %}<input type="hidden" name="action" value="acknowledge-stock-report"><input type="hidden" name="report_run_id" value="{{ run.pk }}"><input name="accounting_reference" type="text" placeholder="Accounting reference"><input name="acknowledgement_notes" type="text" placeholder="Notes (optional)"><button class="button secondary" type="submit">Mark recorded</button></form>{% endif %}</td>
+                <td data-label="Accounting">{% if run.acknowledged_at %}<strong>{{ run.accounting_reference|default:"Recorded" }}</strong><br><span class="help">Acknowledged {{ run.acknowledged_at }} by {{ run.acknowledged_by }}{% if run.acknowledgement_notes %}<br>{{ run.acknowledgement_notes }}{% endif %}</span>{% else %}<form method="post" action="{{ control_panel_url }}" class="ack-form">{% csrf_token %}<input type="hidden" name="action" value="acknowledge-stock-report"><input type="hidden" name="report_run_id" value="{{ run.pk }}"><input name="accounting_reference" type="text" placeholder="Accounting reference"><input name="acknowledgement_notes" type="text" placeholder="Notes (optional)"><button class="button secondary" type="submit">Mark recorded</button></form>{% endif %}</td>
             </tr>{% endfor %}</tbody>
         </table></div>
     </section>
@@ -212,5 +238,36 @@
 
     <div class="footer">INTERNAL - DiCor Engineering &middot; Inventory Manager {{ plugin_version }}</div>
 </main>
+<script>
+    (function () {
+        "use strict";
+
+        var overlay = document.getElementById("generation-overlay");
+        var title = document.getElementById("generation-title");
+
+        function resetOverlay() {
+            overlay.hidden = true;
+            document.body.removeAttribute("aria-busy");
+        }
+
+        Array.prototype.slice.call(
+            document.querySelectorAll(".pdf-generation-form")
+        ).forEach(function (form) {
+            form.addEventListener("submit", function (event) {
+                var submitter = event.submitter || document.activeElement;
+                if (!submitter || submitter.classList.contains("pdf-generation-button") === false) {
+                    return;
+                }
+                title.textContent = "Generating " + (form.dataset.reportLabel || "PDF") + " report";
+                overlay.hidden = false;
+                document.body.setAttribute("aria-busy", "true");
+                // Allow the browser to perform the normal form POST. The server
+                // owns report creation, status checking, and the final download.
+            });
+        });
+
+        window.addEventListener("pageshow", resetOverlay);
+    }());
+</script>
 </body>
 </html>

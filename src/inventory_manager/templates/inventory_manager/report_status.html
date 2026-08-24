@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="refresh" content="2">
-    <title>Generating Report</title>
+    {% if state == "pending" %}<meta http-equiv="refresh" content="2">{% endif %}
+    <title>{% if state == "ready" %}Report Ready{% elif state == "error" %}Report Error{% else %}Generating Report{% endif %}</title>
     <style>
         :root {
             font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -14,25 +14,32 @@
         * { box-sizing: border-box; }
         body { margin: 0; }
         .shell { display: grid; min-height: 100vh; padding: 20px; place-items: center; }
-        .card { width: min(560px, 100%); padding: 34px; border: 1px solid #d7dde2; border-radius: 12px; background: white; box-shadow: 0 3px 14px rgb(35 52 66 / 9%); text-align: center; }
-        .spinner { width: 42px; height: 42px; margin: 0 auto 20px; border: 5px solid #dce6df; border-top-color: #26734d; border-radius: 50%; animation: spin 0.9s linear infinite; }
-        h1 { margin: 0 0 10px; font-size: 25px; }
+        .card { width: min(600px, 100%); padding: 36px; border: 1px solid #d7dde2; border-radius: 12px; background: white; box-shadow: 0 3px 14px rgb(35 52 66 / 9%); text-align: center; }
+        h1 { margin: 0 0 10px; font-size: 26px; }
         p { margin: 0 0 18px; color: #687681; line-height: 1.5; }
-        a { color: #344b5e; font-weight: 700; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .progress-track { height: 12px; margin: 20px 0 7px; overflow: hidden; border-radius: 999px; background: #e3e9ed; }
+        .progress-bar { width: 38%; height: 100%; border-radius: inherit; background: #26734d; animation: progress 1.25s ease-in-out infinite; }
+        .progress-label { display: block; min-height: 18px; color: #687681; font-size: 12px; text-align: center; }
+        .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 22px; }
+        .button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 10px 18px; border: 0; border-radius: 8px; color: #263f51; background: #e5ebef; font-weight: 750; text-decoration: none; }
+        .button:hover { background: #d7e0e5; }
+        @keyframes progress { 0% { transform: translateX(-120%); } 50% { transform: translateX(90%); } 100% { transform: translateX(270%); } }
+        @media (max-width: 500px) { .card { padding: 28px 20px; } .actions { flex-direction: column; } }
     </style>
 </head>
 <body>
 <main class="shell">
-    <section class="card">
-        <div class="spinner" aria-hidden="true"></div>
+    <section class="card" aria-live="polite" aria-busy="true">
         <h1>Generating your report</h1>
-        <p>
-            InvenTree is processing report job {{ output_id }}.
-            This page checks automatically and will open the PDF when it is ready.
-        </p>
-        {% if total %}<p>Progress: {{ progress }} of {{ total }}</p>{% endif %}
-        <a href="{{ control_panel_url }}">Return to Inventory Manager</a>
+        <p>InvenTree is generating your PDF. The download will begin automatically when it is ready.</p>
+        <div class="progress-track" role="progressbar" aria-label="Report generation in progress">
+            <div class="progress-bar"></div>
+        </div>
+        <span class="progress-label">Preparing PDF...</span>
+        <div class="actions">
+            <a class="button" href="">Check status now</a>
+            <a class="button" href="{{ control_panel_url }}">Return to Reporting</a>
+        </div>
     </section>
 </main>
 </body>

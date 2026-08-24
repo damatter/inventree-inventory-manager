@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 # Values are stable InvenTree StockHistoryCode identifiers. Keeping the pure
 # helpers numeric lets their tests run without importing Django / InvenTree.
@@ -76,13 +77,21 @@ class StockEntry:
     user_name: str = ""
     location: str = ""
     notes: str = ""
+    lowest_sale_price: Decimal | None = None
+    highest_sale_price: Decimal | None = None
+    pricing_error: str = ""
 
     def as_context(self) -> dict[str, object]:
         return asdict(self)
 
 
 def summarize_stock_entries(entries: Iterable[StockEntry]) -> dict[str, object]:
-    """Build event, quantity and per-currency valuation totals."""
+    """Build event and per-currency material-value totals.
+
+    ``total_quantity`` remains in the context for backwards compatibility with
+    existing integrations, but the PDF no longer presents it as a useful
+    accounting metric.
+    """
 
     rows = list(entries)
     total_quantity = sum((row.quantity for row in rows), Decimal("0"))
@@ -103,7 +112,114 @@ def summarize_stock_entries(entries: Iterable[StockEntry]) -> dict[str, object]:
             for currency, total in sorted(totals.items())
         ],
         "unvalued_count": unvalued_count,
+        "pricing_error_count": sum(bool(row.pricing_error) for row in rows),
     }
+
+
+def _blank_pricing_values(part_ids: Iterable[int], error: str) -> dict[int, dict[str, Any]]:
+    """Return a complete, safely blank pricing result for every part."""
+
+    return {
+        int(part_id): {
+            "currency": "",
+            "unit_material_cost": None,
+            "lowest_sale_price": None,
+            "highest_sale_price": None,
+            "error": error,
+        }
+        for part_id in dict.fromkeys(int(value) for value in part_ids)
+    }
+
+
+def load_customer_pricing_values(part_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
+    """Load one Customer Pricing snapshot for all requested parts.
+
+    Customer Pricing is an optional companion plugin. A missing, older, or
+    temporarily unavailable installation must leave explicit blanks in this
+    report instead of preventing stock reporting from working.
+    """
+
+    normalized_ids = tuple(dict.fromkeys(int(part_id) for part_id in part_ids))
+    if not normalized_ids:
+        return {}
+
+    try:
+        from inventree_customer_pricing.reporting import reporting_values_for_parts
+    except (ImportError, ModuleNotFoundError):
+        return _blank_pricing_values(
+            normalized_ids,
+            "Customer Pricing 0.6.1 or newer is required for pricing values.",
+        )
+
+    try:
+        values = reporting_values_for_parts(normalized_ids)
+    except Exception as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        return _blank_pricing_values(
+            normalized_ids,
+            f"Customer Pricing values are temporarily unavailable: {detail}",
+        )
+
+    result: dict[int, dict[str, Any]] = {}
+    for part_id in normalized_ids:
+        value = values.get(part_id)
+        if value is None:
+            result.update(
+                _blank_pricing_values(
+                    [part_id], "Customer Pricing returned no result for this part."
+                )
+            )
+            continue
+
+        result[part_id] = {
+            "currency": str(_pricing_field(value, "currency", "") or ""),
+            "unit_material_cost": _pricing_field(value, "unit_material_cost"),
+            "lowest_sale_price": _pricing_field(value, "lowest_sale_price"),
+            "highest_sale_price": _pricing_field(value, "highest_sale_price"),
+            "error": str(_pricing_field(value, "error", "") or ""),
+        }
+
+    return result
+
+
+def user_can_view_stock_entry_pricing(user: object) -> bool:
+    """Apply Customer Pricing's access policy when that API is installed.
+
+    Older or absent companion versions cannot provide monetary values, so the
+    pre-existing stock-history report remains available with blank pricing.
+    Once the pricing API is present, any policy error fails closed.
+    """
+
+    try:
+        from inventree_customer_pricing.reporting import (
+            user_can_view_reporting_values,
+        )
+    except (ImportError, ModuleNotFoundError):
+        return True
+
+    try:
+        return bool(user_can_view_reporting_values(user))
+    except Exception:
+        return False
+
+
+def _decimal_or_none(value: object) -> Decimal | None:
+    """Normalize an optional monetary value returned by Customer Pricing."""
+
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _pricing_field(value: object, name: str, default: Any = None) -> Any:
+    """Read one field from either a public pricing dataclass or dictionary."""
+
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
 
 
 def stock_entries_from_inventree(start: date, end: date) -> list[StockEntry]:
@@ -126,19 +242,32 @@ def stock_entries_from_inventree(start: date, end: date) -> list[StockEntry]:
         .order_by("date", "pk")
     )
 
-    entries = []
+    inbound_events = []
     for event in queryset.iterator():
         quantity = tracking_quantity(event.tracking_type, event.deltas)
         if quantity <= 0:
             continue
 
+        inbound_events.append((event, quantity))
+
+    part_ids = [
+        int(event.part.pk)
+        for event, _quantity in inbound_events
+        if event.part is not None and getattr(event.part, "pk", None) is not None
+    ]
+    pricing_values = load_customer_pricing_values(part_ids)
+
+    entries = []
+    for event, quantity in inbound_events:
         item = event.item
-        price = getattr(item, "purchase_price", None) if item else None
-        amount = getattr(price, "amount", None)
-        currency = getattr(getattr(price, "currency", None), "code", "")
-        unit_value = Decimal(str(amount)) if amount is not None else None
-        total_value = unit_value * quantity if unit_value is not None else None
         part = event.part
+        part_id = getattr(part, "pk", None)
+        pricing = pricing_values.get(int(part_id), {}) if part_id is not None else {}
+        unit_value = _decimal_or_none(pricing.get("unit_material_cost"))
+        lowest_sale_price = _decimal_or_none(pricing.get("lowest_sale_price"))
+        highest_sale_price = _decimal_or_none(pricing.get("highest_sale_price"))
+        currency = str(pricing.get("currency", "") or "")
+        total_value = unit_value * quantity if unit_value is not None else None
         part_name = str(getattr(part, "full_name", "") or part or "Deleted part")
         user_name = ""
         if event.user:
@@ -148,7 +277,7 @@ def stock_entries_from_inventree(start: date, end: date) -> list[StockEntry]:
             StockEntry(
                 event_id=event.pk,
                 entered_at=event.date,
-                part_id=getattr(part, "pk", None),
+                part_id=part_id,
                 part_name=part_name,
                 source=SOURCE_LABELS.get(event.tracking_type, "Stock entered"),
                 quantity=quantity,
@@ -158,6 +287,9 @@ def stock_entries_from_inventree(start: date, end: date) -> list[StockEntry]:
                 user_name=user_name,
                 location=compact_stock_location(getattr(item, "location", None)),
                 notes=str(event.notes or ""),
+                lowest_sale_price=lowest_sale_price,
+                highest_sale_price=highest_sale_price,
+                pricing_error=str(pricing.get("error", "") or ""),
             )
         )
 
@@ -172,9 +304,13 @@ def build_stock_entry_context(
     """Build the context used by scheduled and manual stock-entry exports."""
 
     rows = list(stock_entries_from_inventree(start, end) if entries is None else entries)
+    pricing_errors = tuple(
+        dict.fromkeys(row.pricing_error for row in rows if row.pricing_error)
+    )
     return {
         "stock_entry_period_start": start,
         "stock_entry_period_end": end,
         "stock_entry_items": [row.as_context() for row in rows],
         "stock_entry_summary": summarize_stock_entries(rows),
+        "stock_entry_pricing_errors": pricing_errors,
     }
